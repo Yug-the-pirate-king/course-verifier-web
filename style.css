@@ -1,55 +1,94 @@
-/* ================================================================
-   COURSE VERIFIER · style.css
-   Dark/Light theme via CSS variables — no JS class swapping needed
-   ================================================================ */
+/**
+ * COURSE VERIFIER — style.css
+ *
+ * Theme-aware stylesheet powered by CSS custom properties. Supports dark
+ * (default) and light themes through the [data-theme="light"] attribute.
+ * Component styling is built from reusable design tokens so colors,
+ * borders, radii and transitions stay consistent across the UI.
+ *
+ * Table of contents:
+ *   1. Design tokens
+ *   2. Reset & base styles
+ *   3. Scrollbar
+ *   4. Loading screen
+ *   5. Configuration error screen
+ *   6. Navbar
+ *   7. Page & tab layout
+ *   8. Panels
+ *   9. KPI cards
+ *  10. Dashboard grid, charts & lists
+ *  11. KPI strip (verification tab)
+ *  12. Filter bar
+ *  13. Data table
+ *  14. Badges
+ *  15. Pagination
+ *  16. Modal
+ *  17. Animations
+ *  18. Responsive
+ */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-/* ── Variables ───────────────────────────────────────────────── */
+/* ── 1. Design tokens ────────────────────────────────────────── */
 :root {
-    --bg:           #08090f;
-    --surface:      #0f111a;
-    --surface2:     #161925;
-    --border:       rgba(255,255,255,0.07);
-    --border-hover: rgba(255,255,255,0.14);
-    --text:         #e2e8f0;
-    --text-muted:   #64748b;
-    --text-dim:     #475569;
+    /* Color primitives */
+    --green:         #22c55e;
+    --yellow:        #f59e0b;
+    --red:           #ef4444;
+    --blue:          #3b82f6;
+    --purple:        #8b5cf6;
+    --accent:        #6366f1;
 
-    --green:        #22c55e;
-    --green-bg:     rgba(34,197,94,0.10);
-    --yellow:       #f59e0b;
-    --yellow-bg:    rgba(245,158,11,0.10);
-    --red:          #ef4444;
-    --red-bg:       rgba(239,68,68,0.10);
-    --blue:         #3b82f6;
-    --blue-bg:      rgba(59,130,246,0.10);
-    --purple:       #8b5cf6;
-    --accent:       #6366f1;
-    --accent-dim:   rgba(99,102,241,0.15);
+    /* State-derived colors: backgrounds, borders and glows */
+    --green-bg:      rgba(34,197,94,0.10);
+    --green-border:  rgba(34,197,94,0.25);
+    --green-glow:    rgba(34,197,94,0.30);
+    --green-hover:   rgba(34,197,94,0.20);
+    --yellow-bg:     rgba(245,158,11,0.10);
+    --yellow-border: rgba(245,158,11,0.25);
+    --red-bg:        rgba(239,68,68,0.10);
+    --red-border:    rgba(239,68,68,0.25);
+    --blue-bg:       rgba(59,130,246,0.10);
+    --purple-bg:     rgba(139,92,246,0.10);
+    --accent-dim:    rgba(99,102,241,0.15);
+    --accent-border: rgba(99,102,241,0.30);
 
-    --radius:       12px;
-    --radius-sm:    8px;
-    --shadow:       0 4px 24px rgba(0,0,0,0.4);
-    --transition:   0.18s ease;
+    /* Semantic theme tokens */
+    --bg:            #08090f;
+    --surface:       #0f111a;
+    --surface2:      #161925;
+    --border:        rgba(255,255,255,0.07);
+    --border-hover:  rgba(255,255,255,0.14);
+    --text:          #e2e8f0;
+    --text-muted:    #64748b;
+    --text-dim:      #475569;
 
-    --nav-h:        58px;
+    /* Reusable component/shape/motion tokens */
+    --border-base:   1px solid var(--border);
+    --border-hover-base: 1px solid var(--border-hover);
+    --border-accent-base: 1px solid var(--accent-border);
+    --radius:        12px;
+    --radius-sm:     8px;
+    --shadow:        0 4px 24px rgba(0,0,0,0.4);
+    --transition:    0.18s ease;
+    --transition-base: all var(--transition);
+    --transition-theme: background var(--transition), color var(--transition);
+    --nav-h:         58px;
 }
 
 [data-theme="light"] {
-    --bg:           #f0f4f8;
-    --surface:      #ffffff;
-    --surface2:     #f8fafc;
-    --border:       rgba(0,0,0,0.08);
-    --border-hover: rgba(0,0,0,0.16);
-    --text:         #0f172a;
-    --text-muted:   #64748b;
-    --text-dim:     #94a3b8;
-    --shadow:       0 4px 24px rgba(0,0,0,0.10);
-    --accent-dim:   rgba(99,102,241,0.08);
+    --bg:            #f0f4f8;
+    --surface:       #ffffff;
+    --surface2:      #f8fafc;
+    --border:        rgba(0,0,0,0.08);
+    --border-hover:  rgba(0,0,0,0.16);
+    --text:          #0f172a;
+    --text-dim:      #94a3b8;
+    --shadow:        0 4px 24px rgba(0,0,0,0.10);
+    --accent-dim:    rgba(99,102,241,0.08);
 }
 
-/* ── Reset & Base ────────────────────────────────────────────── */
+/* ── 2. Reset & base styles ──────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { font-size: 15px; scroll-behavior: smooth; }
@@ -60,18 +99,18 @@ body {
     color: var(--text);
     min-height: 100vh;
     line-height: 1.5;
-    transition: background var(--transition), color var(--transition);
+    transition: var(--transition-theme);
 }
 
 a { text-decoration: none; color: inherit; }
 button { cursor: pointer; font-family: inherit; }
 
-/* ── Scrollbar ───────────────────────────────────────────────── */
+/* ── 3. Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 99px; }
 
-/* ── Loading Screen ──────────────────────────────────────────── */
+/* ── 4. Loading screen ───────────────────────────────────────── */
 .loading-screen {
     position: fixed; inset: 0;
     background: var(--bg);
@@ -96,7 +135,7 @@ button { cursor: pointer; font-family: inherit; }
 }
 .loader-sub { color: var(--text-muted); font-size: 0.9rem; }
 
-/* ── Config Error Screen ─────────────────────────────────────── */
+/* ── 5. Configuration error screen ───────────────────────────── */
 .config-error {
     position: fixed; inset: 0;
     background: var(--bg);
@@ -106,7 +145,7 @@ button { cursor: pointer; font-family: inherit; }
 .config-error-box {
     max-width: 500px; width: 100%;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: var(--border-base);
     border-radius: var(--radius);
     padding: 40px; text-align: center;
 }
@@ -116,7 +155,7 @@ button { cursor: pointer; font-family: inherit; }
 .config-error-box code {
     background: var(--surface2); padding: 2px 6px;
     border-radius: 4px; font-size: 0.9em;
-    border: 1px solid var(--border);
+    border: var(--border-base);
 }
 .config-steps { text-align: left; display: flex; flex-direction: column; gap: 12px; }
 .config-step {
@@ -130,13 +169,13 @@ button { cursor: pointer; font-family: inherit; }
     font-size: 0.75rem; font-weight: 600; color: var(--accent);
 }
 
-/* ── Navbar ──────────────────────────────────────────────────── */
+/* ── 6. Navbar ───────────────────────────────────────────────── */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     height: var(--nav-h);
     background: rgba(8,9,15,0.85);
     backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--border-base);
     display: flex; align-items: center;
     padding: 0 24px; gap: 32px;
 }
@@ -160,13 +199,13 @@ button { cursor: pointer; font-family: inherit; }
     border-radius: var(--radius-sm);
     font-size: 0.9rem; font-weight: 500;
     color: var(--text-muted);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .nav-tab:hover { color: var(--text); background: var(--surface2); }
 .nav-tab.active {
     color: var(--text);
     background: var(--accent-dim);
-    border: 1px solid rgba(99,102,241,0.3);
+    border: var(--border-accent-base);
 }
 
 .nav-right {
@@ -184,14 +223,14 @@ button { cursor: pointer; font-family: inherit; }
 
 .theme-btn {
     width: 34px; height: 34px;
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: var(--border-base);
     border-radius: var(--radius-sm); display: flex; align-items: center;
     justify-content: center; font-size: 1rem;
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .theme-btn:hover { border-color: var(--border-hover); background: var(--surface); }
 
-/* ── Page & Tab Layout ───────────────────────────────────────── */
+/* ── 7. Page & tab layout ────────────────────────────────────── */
 .page { animation: fadeIn 0.3s ease; }
 
 .tab-content { display: none; }
@@ -199,10 +238,10 @@ button { cursor: pointer; font-family: inherit; }
 
 .tab-wrap { max-width: 1400px; margin: 0 auto; padding: 24px 24px 40px; }
 
-/* ── Panel ───────────────────────────────────────────────────── */
+/* ── 8. Panels ───────────────────────────────────────────────── */
 .panel {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: var(--border-base);
     border-radius: var(--radius);
     padding: 20px 24px;
     transition: border-color var(--transition);
@@ -215,7 +254,7 @@ button { cursor: pointer; font-family: inherit; }
 .panel-title { font-size: 0.95rem; font-weight: 600; }
 .panel-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 
-/* ── KPI Cards ───────────────────────────────────────────────── */
+/* ── 9. KPI cards ────────────────────────────────────────────── */
 .kpi-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -223,10 +262,10 @@ button { cursor: pointer; font-family: inherit; }
 }
 .kpi-card {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: var(--border-base);
     border-radius: var(--radius);
     padding: 20px 24px;
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .kpi-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
 .kpi-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
@@ -240,7 +279,7 @@ button { cursor: pointer; font-family: inherit; }
 .kpi-red .kpi-value { color: var(--red); }
 .kpi-red { border-left: 3px solid var(--red); }
 
-/* ── Dashboard Grid ──────────────────────────────────────────── */
+/* ── 10. Dashboard grid, charts & lists ────────────────────── */
 .dash-grid {
     display: grid;
     grid-template-columns: 1fr 340px;
@@ -250,7 +289,7 @@ button { cursor: pointer; font-family: inherit; }
 
 .chart-wrap { position: relative; width: 100%; }
 
-/* ── Country List ────────────────────────────────────────────── */
+/* Country ranking list */
 .country-list { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; }
 .country-row {
     display: flex; align-items: center; gap: 12px;
@@ -266,37 +305,37 @@ button { cursor: pointer; font-family: inherit; }
 .country-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--blue)); border-radius: 99px; transition: width 0.5s ease; }
 .country-count { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); flex-shrink: 0; width: 36px; text-align: right; }
 
-/* ── Donut Legend ────────────────────────────────────────────── */
+/* Donut chart legend */
 .donut-legend { display: flex; gap: 20px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
 .donut-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
 .donut-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* ── KPI Strip (Verification Tab) ────────────────────────────── */
+/* ── 11. KPI strip (verification tab) ───────────────────────── */
 .kpi-strip {
     display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
 }
 .kpi-strip-card {
     flex: 1; min-width: 120px;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: var(--border-base);
     border-radius: var(--radius-sm);
     padding: 14px 18px;
     cursor: pointer;
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .kpi-strip-card:hover { border-color: var(--accent); background: var(--accent-dim); }
 .kpi-strip-card.active { border-color: var(--accent); background: var(--accent-dim); }
 .kpi-strip-val { font-size: 1.6rem; font-weight: 700; line-height: 1; }
 .kpi-strip-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
 
-/* ── Filter Bar ──────────────────────────────────────────────── */
+/* ── 12. Filter bar ──────────────────────────────────────────── */
 .filter-bar {
     display: flex; gap: 10px; margin-bottom: 16px;
     flex-wrap: wrap; align-items: center;
 }
 .search-box {
     flex: 1; min-width: 220px;
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: var(--border-base);
     border-radius: var(--radius-sm); padding: 9px 14px;
     font-size: 0.88rem; color: var(--text); font-family: inherit;
     transition: border-color var(--transition);
@@ -306,7 +345,7 @@ button { cursor: pointer; font-family: inherit; }
 .search-box::placeholder { color: var(--text-dim); }
 
 .filter-select {
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: var(--border-base);
     border-radius: var(--radius-sm); padding: 9px 12px;
     font-size: 0.82rem; color: var(--text); font-family: inherit;
     outline: none; cursor: pointer;
@@ -315,14 +354,14 @@ button { cursor: pointer; font-family: inherit; }
 .filter-select:focus { border-color: var(--accent); }
 
 .btn-reset {
-    background: transparent; border: 1px solid var(--border);
+    background: transparent; border: var(--border-base);
     border-radius: var(--radius-sm); padding: 9px 14px;
     font-size: 0.82rem; color: var(--text-muted);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .btn-reset:hover { border-color: var(--red); color: var(--red); }
 
-/* ── Data Table ──────────────────────────────────────────────── */
+/* ── 13. Data table ──────────────────────────────────────────── */
 .tbl-wrap { overflow-x: auto; }
 .data-table {
     width: 100%; border-collapse: collapse;
@@ -330,13 +369,13 @@ button { cursor: pointer; font-family: inherit; }
 }
 .data-table thead th {
     padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--border-base);
     font-size: 0.75rem; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--text-muted); text-align: left; white-space: nowrap;
 }
 .data-table tbody tr {
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--border-base);
     transition: background var(--transition);
     cursor: pointer;
 }
@@ -356,33 +395,33 @@ button { cursor: pointer; font-family: inherit; }
     color: var(--text-dim); cursor: default !important;
 }
 
-/* ── Badges ──────────────────────────────────────────────────── */
+/* ── 14. Badges ─────────────────────────────────────────────── */
 .badge {
     display: inline-flex; align-items: center;
     padding: 3px 10px; border-radius: 99px;
     font-size: 0.74rem; font-weight: 600; white-space: nowrap;
 }
-.badge-verified    { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
-.badge-discrepancy { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(245,158,11,0.25); }
-.badge-error       { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
+.badge-verified    { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+.badge-discrepancy { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
+.badge-error       { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
 
-/* ── Pagination Bar ──────────────────────────────────────────── */
+/* ── 15. Pagination ───────────────────────────────────────────── */
 .pag-bar {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 16px; padding-top: 16px;
-    border-top: 1px solid var(--border);
+    border-top: var(--border-base);
 }
 .btn-pg {
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: var(--border-base);
     border-radius: var(--radius-sm); padding: 7px 16px;
     font-size: 0.82rem; color: var(--text-muted);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .btn-pg:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-pg:disabled { opacity: 0.35; cursor: not-allowed; }
 .pag-info { font-size: 0.82rem; color: var(--text-muted); }
 
-/* ── Modal ───────────────────────────────────────────────────── */
+/* ── 16. Modal ───────────────────────────────────────────────── */
 .modal-overlay {
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.7);
@@ -396,7 +435,7 @@ button { cursor: pointer; font-family: inherit; }
 
 .modal-box {
     background: var(--surface);
-    border: 1px solid var(--border-hover);
+    border: var(--border-hover-base);
     border-radius: var(--radius);
     width: 100%; max-width: 780px;
     max-height: 90vh; overflow-y: auto;
@@ -415,11 +454,11 @@ button { cursor: pointer; font-family: inherit; }
 .modal-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 .modal-close-btn {
     width: 30px; height: 30px;
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: var(--border-base);
     border-radius: var(--radius-sm); display: flex;
     align-items: center; justify-content: center;
     font-size: 0.85rem; color: var(--text-muted);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .modal-close-btn:hover { border-color: var(--red); color: var(--red); }
 
@@ -442,23 +481,23 @@ button { cursor: pointer; font-family: inherit; }
 .modal-footer {
     display: flex; justify-content: space-between;
     align-items: center; margin-top: 16px; padding-top: 16px;
-    border-top: 1px solid var(--border);
+    border-top: var(--border-base);
 }
 .modal-hint { font-size: 0.8rem; color: var(--text-dim); }
 
 .btn-solve-all {
-    background: var(--green-bg); border: 1px solid rgba(34,197,94,0.3);
+    background: var(--green-bg); border: 1px solid var(--green-glow);
     border-radius: var(--radius-sm); padding: 8px 18px;
     font-size: 0.85rem; font-weight: 600; color: var(--green);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
-.btn-solve-all:hover { background: rgba(34,197,94,0.2); }
+.btn-solve-all:hover { background: var(--green-hover); }
 
 .btn-solve {
-    background: transparent; border: 1px solid var(--border);
+    background: transparent; border: var(--border-base);
     border-radius: 6px; padding: 4px 10px;
     font-size: 0.75rem; color: var(--text-muted);
-    transition: all var(--transition);
+    transition: var(--transition-base);
 }
 .btn-solve:hover { border-color: var(--green); color: var(--green); }
 .btn-solve.solved { border-color: var(--green); color: var(--green); background: var(--green-bg); }
@@ -467,7 +506,7 @@ button { cursor: pointer; font-family: inherit; }
 .match-yes { color: var(--green); }
 .match-no  { color: var(--red); }
 
-/* ── Animations ──────────────────────────────────────────────── */
+/* ── 17. Animations ─────────────────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp {
@@ -476,7 +515,7 @@ button { cursor: pointer; font-family: inherit; }
 }
 .tab-content.active { animation: slideUp 0.22s ease; }
 
-/* ── Responsive ──────────────────────────────────────────────── */
+/* ── 18. Responsive ─────────────────────────────────────────── */
 @media (max-width: 640px) {
     .tab-wrap { padding: 16px 14px 32px; }
     .kpi-value { font-size: 1.8rem; }
