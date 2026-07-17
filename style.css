@@ -1,41 +1,54 @@
 /* ================================================================
    COURSE VERIFIER · style.css
-   Dark/Light theme via CSS variables — no JS class swapping needed
+   ----------------------------------------------------------------
+   Primary stylesheet for the Course Verifier dashboard. Implements
+   a complete dark/light theme system using CSS custom properties,
+   driven by a single data-theme attribute on the document root.
+   No JavaScript class swapping is required for colour changes.
    ================================================================ */
 
+/* Google Font: Inter for a clean, modern UI across all weights. */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-/* ── Variables ───────────────────────────────────────────────── */
+/* ── CSS Variables ─────────────────────────────────────────────
+   All theme-aware values are declared here. The default palette is
+   dark; [data-theme="light"] overrides only the values that change.
+   Keeping variable names semantic (e.g. --surface, --text) lets
+   components stay agnostic of the active theme.                 */
 :root {
-    --bg:           #08090f;
-    --surface:      #0f111a;
-    --surface2:     #161925;
-    --border:       rgba(255,255,255,0.07);
-    --border-hover: rgba(255,255,255,0.14);
-    --text:         #e2e8f0;
-    --text-muted:   #64748b;
-    --text-dim:     #475569;
+    --bg:           #08090f;   /* Page background */
+    --surface:      #0f111a;   /* Card / panel background */
+    --surface2:     #161925;   /* Secondary background for inputs, chips */
+    --border:       rgba(255,255,255,0.07);   /* Default border colour */
+    --border-hover: rgba(255,255,255,0.14);   /* Hover / elevated border */
+    --text:         #e2e8f0;   /* Primary text */
+    --text-muted:   #64748b;   /* Secondary / helper text */
+    --text-dim:     #475569;   /* Placeholder / disabled text */
 
-    --green:        #22c55e;
+    /* Status / semantic colours */
+    --green:        #22c55e;   /* Success / verified */
     --green-bg:     rgba(34,197,94,0.10);
-    --yellow:       #f59e0b;
+    --yellow:       #f59e0b;   /* Warning / discrepancy */
     --yellow-bg:    rgba(245,158,11,0.10);
-    --red:          #ef4444;
+    --red:          #ef4444;   /* Error / mismatch */
     --red-bg:       rgba(239,68,68,0.10);
-    --blue:         #3b82f6;
+    --blue:         #3b82f6;   /* Info / accent pairing */
     --blue-bg:      rgba(59,130,246,0.10);
-    --purple:       #8b5cf6;
-    --accent:       #6366f1;
+    --purple:       #8b5cf6;   /* Chart / additional accent */
+    --accent:       #6366f1;   /* Primary interactive accent */
     --accent-dim:   rgba(99,102,241,0.15);
 
+    /* Spacing, shape & motion tokens */
     --radius:       12px;
     --radius-sm:    8px;
     --shadow:       0 4px 24px rgba(0,0,0,0.4);
     --transition:   0.18s ease;
 
-    --nav-h:        58px;
+    --nav-h:        58px;      /* Fixed navbar height; used for offsets */
 }
 
+/* Light theme override set. Only variables that differ from the
+   dark default are re-declared; everything else is inherited.    */
 [data-theme="light"] {
     --bg:           #f0f4f8;
     --surface:      #ffffff;
@@ -49,10 +62,21 @@
     --accent-dim:   rgba(99,102,241,0.08);
 }
 
-/* ── Reset & Base ────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Reset & Base ──────────────────────────────────────────────
+   A minimal reset ensures consistent sizing, removes user-agent
+   margins, and gives us a predictable foundation across browsers. */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
 
-html { font-size: 15px; scroll-behavior: smooth; }
+/* Root font size sets the rem scale. 15px keeps numbers compact
+   without making text feel small. Smooth scrolling improves UX. */
+html {
+    font-size: 15px;
+    scroll-behavior: smooth;
+}
 
 body {
     font-family: 'Inter', system-ui, sans-serif;
@@ -60,18 +84,23 @@ body {
     color: var(--text);
     min-height: 100vh;
     line-height: 1.5;
+    /* Animate theme transitions so colour switches feel polished. */
     transition: background var(--transition), color var(--transition);
 }
 
 a { text-decoration: none; color: inherit; }
 button { cursor: pointer; font-family: inherit; }
 
-/* ── Scrollbar ───────────────────────────────────────────────── */
+/* ── Custom Scrollbar ─────────────────────────────────────────
+   A thin, rounded scrollbar that matches the aesthetic without
+   consuming excessive horizontal space in tables and lists.     */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 99px; }
 
-/* ── Loading Screen ──────────────────────────────────────────── */
+/* ── Loading Screen ───────────────────────────────────────────
+   Full-screen overlay shown while the app initialises. Appears
+   above all other UI with z-index: 9999 and a subtle fade-in.   */
 .loading-screen {
     position: fixed; inset: 0;
     background: var(--bg);
@@ -83,7 +112,7 @@ button { cursor: pointer; font-family: inherit; }
 .loader-spinner {
     width: 48px; height: 48px;
     border: 3px solid var(--border-hover);
-    border-top-color: var(--accent);
+    border-top-color: var(--accent);   /* Only top border is coloured */
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     margin: 0 auto 20px;
@@ -91,12 +120,15 @@ button { cursor: pointer; font-family: inherit; }
 .loader-title {
     font-size: 1.5rem; font-weight: 700;
     background: linear-gradient(135deg, var(--accent), var(--blue));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
     margin-bottom: 8px;
 }
 .loader-sub { color: var(--text-muted); font-size: 0.9rem; }
 
-/* ── Config Error Screen ─────────────────────────────────────── */
+/* ── Configuration Error Screen ────────────────────────────────
+   Shown when required app config (e.g. backend URL) is missing.
+   Sits just below the loading screen in the stacking order.     */
 .config-error {
     position: fixed; inset: 0;
     background: var(--bg);
@@ -130,7 +162,10 @@ button { cursor: pointer; font-family: inherit; }
     font-size: 0.75rem; font-weight: 600; color: var(--accent);
 }
 
-/* ── Navbar ──────────────────────────────────────────────────── */
+/* ── Navbar ────────────────────────────────────────────────────
+   Sticky glass-effect header. Backdrop-filter gives the frosted
+   look; the theme-specific translucent background keeps the blur
+   consistent in both dark and light modes.                     */
 .navbar {
     position: sticky; top: 0; z-index: 100;
     height: var(--nav-h);
@@ -154,6 +189,7 @@ button { cursor: pointer; font-family: inherit; }
     font-size: 1.1rem;
 }
 
+/* Horizontal row of tab buttons inside the navbar. */
 .nav-tabs { display: flex; gap: 4px; flex: 1; }
 .nav-tab {
     padding: 6px 16px;
@@ -169,6 +205,7 @@ button { cursor: pointer; font-family: inherit; }
     border: 1px solid rgba(99,102,241,0.3);
 }
 
+/* Right-hand cluster: connection status, label, theme toggle. */
 .nav-right {
     display: flex; align-items: center; gap: 10px;
     margin-left: auto; white-space: nowrap;
@@ -191,7 +228,9 @@ button { cursor: pointer; font-family: inherit; }
 }
 .theme-btn:hover { border-color: var(--border-hover); background: var(--surface); }
 
-/* ── Page & Tab Layout ───────────────────────────────────────── */
+/* ── Page & Tab Layout ───────────────────────────────────────
+   Each .page wrapper fades in. Tab panes are toggled via JS by
+   adding/removing the .active class; only the active one shows. */
 .page { animation: fadeIn 0.3s ease; }
 
 .tab-content { display: none; }
@@ -199,7 +238,8 @@ button { cursor: pointer; font-family: inherit; }
 
 .tab-wrap { max-width: 1400px; margin: 0 auto; padding: 24px 24px 40px; }
 
-/* ── Panel ───────────────────────────────────────────────────── */
+/* ── Panel Component ───────────────────────────────────────────
+   Reusable content container with a subtle hover border lift. */
 .panel {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -215,7 +255,9 @@ button { cursor: pointer; font-family: inherit; }
 .panel-title { font-size: 0.95rem; font-weight: 600; }
 .panel-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 
-/* ── KPI Cards ───────────────────────────────────────────────── */
+/* ── KPI Cards (Dashboard) ─────────────────────────────────────
+   Auto-fitting grid of summary cards. Each variant gets a left
+   border accent colour and a matching value colour.             */
 .kpi-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -228,11 +270,16 @@ button { cursor: pointer; font-family: inherit; }
     padding: 20px 24px;
     transition: all var(--transition);
 }
-.kpi-card:hover { border-color: var(--border-hover); transform: translateY(-2px); box-shadow: var(--shadow); }
+.kpi-card:hover {
+    border-color: var(--border-hover);
+    transform: translateY(-2px);         /* Subtle lift */
+    box-shadow: var(--shadow);
+}
 .kpi-label { font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
 .kpi-value { font-size: 2.4rem; font-weight: 800; margin: 8px 0 4px; line-height: 1; }
 .kpi-sub { font-size: 0.78rem; color: var(--text-dim); }
 
+/* Status-coloured KPI variants. */
 .kpi-green .kpi-value { color: var(--green); }
 .kpi-green { border-left: 3px solid var(--green); }
 .kpi-yellow .kpi-value { color: var(--yellow); }
@@ -240,7 +287,9 @@ button { cursor: pointer; font-family: inherit; }
 .kpi-red .kpi-value { color: var(--red); }
 .kpi-red { border-left: 3px solid var(--red); }
 
-/* ── Dashboard Grid ──────────────────────────────────────────── */
+/* ── Dashboard Grid ────────────────────────────────────────────
+   Main chart area with a 340px sidebar for country/legend lists.
+   Collapses to a single column on narrow viewports.            */
 .dash-grid {
     display: grid;
     grid-template-columns: 1fr 340px;
@@ -250,7 +299,9 @@ button { cursor: pointer; font-family: inherit; }
 
 .chart-wrap { position: relative; width: 100%; }
 
-/* ── Country List ────────────────────────────────────────────── */
+/* ── Country List ──────────────────────────────────────────────
+   Scrollable ranking list with a compact horizontal bar chart
+   showing relative volume per country.                        */
 .country-list { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; }
 .country-row {
     display: flex; align-items: center; gap: 12px;
@@ -261,17 +312,30 @@ button { cursor: pointer; font-family: inherit; }
     display: flex; align-items: center; justify-content: center;
     font-size: 0.7rem; font-weight: 600; color: var(--text-muted);
 }
-.country-name { flex: 1; font-size: 0.88rem; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.country-bar-wrap { width: 90px; height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; flex-shrink: 0; }
-.country-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--blue)); border-radius: 99px; transition: width 0.5s ease; }
+.country-name {
+    flex: 1; font-size: 0.88rem; font-weight: 500;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.country-bar-wrap {
+    width: 90px; height: 6px;
+    background: var(--surface2); border-radius: 99px;
+    overflow: hidden; flex-shrink: 0;
+}
+.country-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--blue));
+    border-radius: 99px;
+    transition: width 0.5s ease;           /* Animate bar growth on load */
+}
 .country-count { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); flex-shrink: 0; width: 36px; text-align: right; }
 
-/* ── Donut Legend ────────────────────────────────────────────── */
+/* ── Donut Chart Legend ──────────────────────────────────────── */
 .donut-legend { display: flex; gap: 20px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
 .donut-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
 .donut-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* ── KPI Strip (Verification Tab) ────────────────────────────── */
+/* ── KPI Strip (Verification Tab) ──────────────────────────────
+   Clickable filter chips that also act as quick stat summaries. */
 .kpi-strip {
     display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;
 }
@@ -289,7 +353,9 @@ button { cursor: pointer; font-family: inherit; }
 .kpi-strip-val { font-size: 1.6rem; font-weight: 700; line-height: 1; }
 .kpi-strip-lbl { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
 
-/* ── Filter Bar ──────────────────────────────────────────────── */
+/* ── Filter Bar ────────────────────────────────────────────────
+   Search input, dropdown filters and a reset button. The search
+   box grows to fill available space; filters shrink-wrap.       */
 .filter-bar {
     display: flex; gap: 10px; margin-bottom: 16px;
     flex-wrap: wrap; align-items: center;
@@ -322,7 +388,9 @@ button { cursor: pointer; font-family: inherit; }
 }
 .btn-reset:hover { border-color: var(--red); color: var(--red); }
 
-/* ── Data Table ──────────────────────────────────────────────── */
+/* ── Data Table ────────────────────────────────────────────────
+   Responsive table with hover highlighting, truncation on long
+   cells, and status-based row backgrounds.                    */
 .tbl-wrap { overflow-x: auto; }
 .data-table {
     width: 100%; border-collapse: collapse;
@@ -345,6 +413,7 @@ button { cursor: pointer; font-family: inherit; }
 .data-table td {
     padding: 11px 14px;
     vertical-align: middle;
+    /* Clamp cell content to one line with ellipsis. */
     max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .data-table td:first-child { color: var(--text-dim); font-size: 0.8rem; }
@@ -356,7 +425,9 @@ button { cursor: pointer; font-family: inherit; }
     color: var(--text-dim); cursor: default !important;
 }
 
-/* ── Badges ──────────────────────────────────────────────────── */
+/* ── Status Badges ─────────────────────────────────────────────
+   Small pill labels used in tables and modals. Each variant
+   combines a tinted background, matching border and text colour. */
 .badge {
     display: inline-flex; align-items: center;
     padding: 3px 10px; border-radius: 99px;
@@ -366,7 +437,7 @@ button { cursor: pointer; font-family: inherit; }
 .badge-discrepancy { background: var(--yellow-bg); color: var(--yellow); border: 1px solid rgba(245,158,11,0.25); }
 .badge-error       { background: var(--red-bg); color: var(--red); border: 1px solid rgba(239,68,68,0.25); }
 
-/* ── Pagination Bar ──────────────────────────────────────────── */
+/* ── Pagination Bar ────────────────────────────────────────────── */
 .pag-bar {
     display: flex; align-items: center; justify-content: center;
     gap: 16px; margin-top: 16px; padding-top: 16px;
@@ -382,7 +453,9 @@ button { cursor: pointer; font-family: inherit; }
 .btn-pg:disabled { opacity: 0.35; cursor: not-allowed; }
 .pag-info { font-size: 0.82rem; color: var(--text-muted); }
 
-/* ── Modal ───────────────────────────────────────────────────── */
+/* ── Modal ─────────────────────────────────────────────────────
+   Centered overlay with blur. The overlay starts hidden and slides
+   the dialog into place when .open is added.                    */
 .modal-overlay {
     position: fixed; inset: 0;
     background: rgba(0,0,0,0.7);
@@ -423,6 +496,7 @@ button { cursor: pointer; font-family: inherit; }
 }
 .modal-close-btn:hover { border-color: var(--red); color: var(--red); }
 
+/* Inline metadata chips inside the modal body. */
 .modal-meta {
     display: flex; flex-wrap: wrap; gap: 10px;
     margin-bottom: 20px; padding: 14px;
@@ -446,6 +520,7 @@ button { cursor: pointer; font-family: inherit; }
 }
 .modal-hint { font-size: 0.8rem; color: var(--text-dim); }
 
+/* Solve action buttons. */
 .btn-solve-all {
     background: var(--green-bg); border: 1px solid rgba(34,197,94,0.3);
     border-radius: var(--radius-sm); padding: 8px 18px;
@@ -467,7 +542,8 @@ button { cursor: pointer; font-family: inherit; }
 .match-yes { color: var(--green); }
 .match-no  { color: var(--red); }
 
-/* ── Animations ──────────────────────────────────────────────── */
+/* ── Animations ────────────────────────────────────────────────
+   Reusable keyframes for loading, page transitions and tab entry. */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp {
@@ -476,7 +552,9 @@ button { cursor: pointer; font-family: inherit; }
 }
 .tab-content.active { animation: slideUp 0.22s ease; }
 
-/* ── Responsive ──────────────────────────────────────────────── */
+/* ── Responsive Adjustments ────────────────────────────────────
+   Minor tweaks for small screens: tighter padding, smaller KPI
+   type, and more compact nav tabs.                               */
 @media (max-width: 640px) {
     .tab-wrap { padding: 16px 14px 32px; }
     .kpi-value { font-size: 1.8rem; }
