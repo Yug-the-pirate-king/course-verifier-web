@@ -1,11 +1,13 @@
 /* ================================================================
    COURSE VERIFIER · app.js
-   All-in-one frontend: MongoDB Atlas Data API + Client-side logic
+   All-in-one frontend: Vercel Serverless API + Client-side logic
    ================================================================ */
 
 'use strict';
 
-// ── Domain Ranges (fixed by course ID) ───────────────────────────
+/* ================================================================
+   Domain ranges: each course ID maps to exactly one category.
+   ================================================================ */
 const DOMAIN_RANGES = [
     { label: 'Free',                   min: 1,    max: 25   },
     { label: 'Free to Audit',          min: 26,   max: 48   },
@@ -18,685 +20,931 @@ const DOMAIN_RANGES = [
     { label: 'Legal & Ethical',        min: 2966, max: 3727 },
 ];
 
-function getDomainLabel(id) {
-    const n = parseInt(id, 10);
-    if (isNaN(n)) return 'Uncategorised';
-    for (const r of DOMAIN_RANGES) {
-        if (n >= r.min && n <= r.max) return r.label;
+/**
+ * Resolve the domain label for a course ID.
+ * Falls back to 'Uncategorised' for missing/out-of-range IDs.
+ */
+function getDomainLabel(courseId) {
+    const id = parseInt(courseId, 10);
+    if (Number.isNaN(id)) return 'Uncategorised';
+
+    for (const range of DOMAIN_RANGES) {
+        if (id >= range.min && id <= range.max) return range.label;
     }
     return 'Uncategorised';
 }
 
-// ── State ─────────────────────────────────────────────────────────
-let allCourses = [];           // All documents from MongoDB (loaded once)
-let domainChart = null;
-let statusChart = null;
+/* ================================================================
+   Application state
+   ================================================================ */
+let allCourses = [];                 // Full course dataset, enriched after fetch
+let domainBarChart = null;           // Chart.js instance for domain bar chart
+let statusDonutChart = null;         // Chart.js instance for status donut chart
 
-let vfPage = 1;                // Verification tab pagination
-let cfPage = 1;                // All Courses tab pagination
+let verificationPage = 1;            // Current page on the Verification tab
+let coursesPage = 1;                 // Current page on the All Courses tab
 const PAGE_SIZE = 100;
 
-let vfFilter = { search: '', status: 'issues', country: 'all', domain: 'all' };
-let cfFilter = { search: '', status: 'all', country: 'all', domain: 'all', qs: 'any' };
+let verificationFilter = { search: '', status: 'issues', country: 'all', domain: 'all' };
+let coursesFilter    = { search: '', status: 'all',     country: 'all', domain: 'all', qs: 'any' };
 
-let modalCourse = null;        // Currently open course in modal
+let activeModalCourse = null;        // Course currently displayed in the modal
 
-// ── API Fetchers (Vercel Serverless) ──────────────────────────────
+/* ================================================================
+   API fetchers
+   ================================================================ */
 
 /**
- * Fetch ALL courses from the Vercel API.
- * Returns full sorted array.
+ * Fetch every course from the Vercel API.
  */
 async function fetchAllCourses() {
-    setLoaderSub('Fetching courses from database…');
-    const res = await fetch('/api/get_courses');
-    if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`API error ${res.status}: ${err}`);
+    setLoaderSubtitle('Fetching courses from database…');
+    const response = await fetch('/api/get_courses');
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error ${response.status}: ${errorText}`);
     }
-    const data = await res.json();
-    const docs = data.documents || [];
-    setLoaderSub(`Loaded ${docs.length} courses…`);
-    return docs;
+    const data = await response.json();
+    const documents = data.documents || [];
+    setLoaderSubtitle(`Loaded ${documents.length} courses…`);
+    return documents;
 }
 
 /**
- * Write an updated course back to MongoDB via Vercel API.
+ * Persist an updated course back to MongoDB via the Vercel API.
  */
-async function mongoUpdateCourse(courseId, update) {
-    const res = await fetch('/api/solve_course', {
+async function updateCourse(courseId, update) {
+    const response = await fetch('/api/solve_course', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: courseId, update: update })
+        body: JSON.stringify({ id: courseId, update })
     });
-    if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`API error ${res.status}: ${err}`);
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error ${response.status}: ${errorText}`);
     }
-    return res.json();
+    return response.json();
 }
 
-// ── Loader helpers ────────────────────────────────────────────────
+/* ================================================================
+   Loader / connection helpers
+   ================================================================ */
 
-function setLoaderSub(text) {
-    const el = document.getElementById('loader-sub');
-    if (el) el.textContent = text;
+function setLoaderSubtitle(text) {
+    const element = document.getElementById('loader-sub');
+    if (element) element.textContent = text;
 }
 
-function setConnStatus(state) {
-    const dot   = document.getElementById('conn-dot');
+function setConnectionState(state) {
+    const dot = document.getElementById('conn-dot');
     const label = document.getElementById('conn-label');
     if (!dot || !label) return;
+
     dot.className = 'status-dot ' + state;
     label.textContent = state === 'connected' ? 'Connected'
                       : state === 'error'     ? 'Error'
                       : 'Connecting';
 }
 
-// ── INIT ──────────────────────────────────────────────────────────
+/* ================================================================
+   DOM utilities
+   ================================================================ */
+
+function byId(id) {
+    return document.getElementById(id);
+}
+
+function setElementText(id, value) {
+    const element = byId(id);
+    if (element) element.textContent = value;
+}
+
+function escapeHtml(str) {
+    return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function escapeJsString(str) {
+    return String(str || '')
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+function getStatusBadgeHtml(status) {
+    const className = {
+        Verified:    'badge-verified',
+        Discrepancy: 'badge-discrepancy',
+        Error:       'badge-error',
+    }[status] || 'badge-error';
+    return `<span class="badge ${className}">${escapeHtml(status || '—')}</span>`;
+}
+
+/* ================================================================
+   Debounce helper for search inputs
+   ================================================================ */
+function debounce(fn, delayMs) {
+    let timer;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delayMs);
+    };
+}
+
+/* ================================================================
+   Bootstrap on DOM ready
+   ================================================================ */
 
 document.addEventListener('DOMContentLoaded', async () => {
     initTheme();
     initTabs();
 
-    // Fetch data from Vercel API
     try {
-        setConnStatus('connecting');
-        allCourses = await fetchAllCourses();
-        setConnStatus('connected');
+        setConnectionState('connecting');
+        allCourses = enrichCourseData(await fetchAllCourses());
+        setConnectionState('connected');
 
-        document.getElementById('loading-screen').style.display = 'none';
-        document.getElementById('main-page').style.display      = 'block';
+        byId('loading-screen').style.display = 'none';
+        byId('main-page').style.display = 'block';
 
-        // Populate dropdowns
         populateFilters();
-
-        // Render everything
         renderDashboard();
         renderVerificationTab();
         renderCoursesTab();
 
-        // Wire up filter events
         initFilters();
         initModal();
         initKpiClickThrough();
-
-    } catch (err) {
-        setConnStatus('error');
-        setLoaderSub('Connection failed: ' + err.message);
-        console.error('[MongoFetch]', err);
+    } catch (error) {
+        setConnectionState('error');
+        setLoaderSubtitle('Connection failed: ' + error.message);
+        console.error('[MongoFetch]', error);
     }
 });
 
-// ── THEME ─────────────────────────────────────────────────────────
+/* ================================================================
+   Data enrichment (performs once after fetch)
+   ================================================================ */
+
+/**
+ * Add derived/cached fields to every course so filtering and
+ * rendering avoid recomputing the same values repeatedly.
+ */
+function enrichCourseData(courses) {
+    courses.forEach(course => {
+        course.domainLabel = getDomainLabel(course.id);
+        course._vfSearchIndex = buildSearchIndex(course, ['name', 'university', 'country', 'disc_reason']);
+        course._cfSearchIndex = buildSearchIndex(course, ['name', 'university', 'country', 'skills']);
+    });
+    return courses;
+}
+
+function buildSearchIndex(course, fields) {
+    return fields
+        .map(field => String(course[field] || '').toLowerCase())
+        .join(' ');
+}
+
+/* ================================================================
+   Theme
+   ================================================================ */
 
 function initTheme() {
-    const saved = localStorage.getItem('cv_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', saved);
-    updateThemeIcon(saved);
+    const savedTheme = localStorage.getItem('cv_theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
 
-    document.getElementById('theme-btn').addEventListener('click', () => {
-        const cur = document.documentElement.getAttribute('data-theme');
-        const next = cur === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
-        localStorage.setItem('cv_theme', next);
-        updateThemeIcon(next);
-        // Re-render charts with new colours
+    byId('theme-btn').addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const nextTheme = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        localStorage.setItem('cv_theme', nextTheme);
+        updateThemeIcon(nextTheme);
+        // Re-render charts so they pick up the new palette
         renderDashboard();
     });
 }
 
 function updateThemeIcon(theme) {
-    const el = document.getElementById('theme-icon');
-    if (el) el.textContent = theme === 'dark' ? '☀' : '🌙';
+    const icon = byId('theme-icon');
+    if (icon) icon.textContent = theme === 'dark' ? '☀' : '🌙';
 }
 
-// ── TABS ──────────────────────────────────────────────────────────
+/* ================================================================
+   Tabs
+   ================================================================ */
 
 function initTabs() {
-    document.getElementById('nav-tabs').addEventListener('click', e => {
-        const link = e.target.closest('.nav-tab');
-        if (!link) return;
-        e.preventDefault();
-        const target = link.dataset.tab;
-        document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        link.classList.add('active');
-        document.getElementById(target).classList.add('active');
+    byId('nav-tabs').addEventListener('click', event => {
+        const tabLink = event.target.closest('.nav-tab');
+        if (!tabLink) return;
+
+        event.preventDefault();
+        const targetId = tabLink.dataset.tab;
+
+        document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+
+        tabLink.classList.add('active');
+        byId(targetId).classList.add('active');
     });
 }
 
-// ── POPULATE FILTER DROPDOWNS ─────────────────────────────────────
+/* ================================================================
+   Filter dropdown population
+   ================================================================ */
 
 function populateFilters() {
-    const countries = [...new Set(allCourses.map(c => c.country).filter(Boolean))].sort();
-    const domains   = DOMAIN_RANGES.map(r => r.label);
+    const countries = [...new Set(allCourses.map(course => course.country).filter(Boolean))].sort();
+    const domains = DOMAIN_RANGES.map(range => range.label);
 
-    ['vf-country', 'cf-country'].forEach(id => {
-        const sel = document.getElementById(id);
-        countries.forEach(c => {
-            const opt = document.createElement('option');
-            opt.value = c; opt.textContent = c;
-            sel.appendChild(opt);
+    ['vf-country', 'cf-country'].forEach(selectId => {
+        const select = byId(selectId);
+        const fragment = document.createDocumentFragment();
+        countries.forEach(country => {
+            const option = document.createElement('option');
+            option.value = country;
+            option.textContent = country;
+            fragment.appendChild(option);
         });
+        select.appendChild(fragment);
     });
 
-    ['vf-domain', 'cf-domain'].forEach(id => {
-        const sel = document.getElementById(id);
-        domains.forEach(d => {
-            const opt = document.createElement('option');
-            opt.value = d; opt.textContent = d;
-            sel.appendChild(opt);
+    ['vf-domain', 'cf-domain'].forEach(selectId => {
+        const select = byId(selectId);
+        const fragment = document.createDocumentFragment();
+        domains.forEach(domain => {
+            const option = document.createElement('option');
+            option.value = domain;
+            option.textContent = domain;
+            fragment.appendChild(option);
         });
+        select.appendChild(fragment);
     });
 }
 
-// ── FILTER EVENTS ─────────────────────────────────────────────────
+/* ================================================================
+   Filter events
+   ================================================================ */
 
 function initFilters() {
-    let vfTimer, cfTimer;
-
     // Verification tab
-    document.getElementById('vf-search').addEventListener('input', e => {
-        clearTimeout(vfTimer);
-        vfTimer = setTimeout(() => { vfFilter.search = e.target.value.toLowerCase(); vfPage = 1; renderVerificationTab(); }, 220);
+    byId('vf-search').addEventListener('input', debounce(event => {
+        verificationFilter.search = event.target.value.toLowerCase();
+        verificationPage = 1;
+        renderVerificationTab();
+    }, 220));
+
+    byId('vf-status').addEventListener('change', event => {
+        verificationFilter.status = event.target.value;
+        verificationPage = 1;
+        renderVerificationTab();
     });
-    document.getElementById('vf-status').addEventListener('change', e => { vfFilter.status = e.target.value; vfPage = 1; renderVerificationTab(); });
-    document.getElementById('vf-country').addEventListener('change', e => { vfFilter.country = e.target.value; vfPage = 1; renderVerificationTab(); });
-    document.getElementById('vf-domain').addEventListener('change', e => { vfFilter.domain = e.target.value; vfPage = 1; renderVerificationTab(); });
-    document.getElementById('vf-reset').addEventListener('click', () => {
-        vfFilter = { search: '', status: 'issues', country: 'all', domain: 'all' };
-        document.getElementById('vf-search').value = '';
-        document.getElementById('vf-status').value  = 'issues';
-        document.getElementById('vf-country').value = 'all';
-        document.getElementById('vf-domain').value  = 'all';
-        vfPage = 1;
+
+    byId('vf-country').addEventListener('change', event => {
+        verificationFilter.country = event.target.value;
+        verificationPage = 1;
+        renderVerificationTab();
+    });
+
+    byId('vf-domain').addEventListener('change', event => {
+        verificationFilter.domain = event.target.value;
+        verificationPage = 1;
+        renderVerificationTab();
+    });
+
+    byId('vf-reset').addEventListener('click', () => {
+        verificationFilter = { search: '', status: 'issues', country: 'all', domain: 'all' };
+        byId('vf-search').value = '';
+        byId('vf-status').value  = 'issues';
+        byId('vf-country').value = 'all';
+        byId('vf-domain').value  = 'all';
+        verificationPage = 1;
         renderVerificationTab();
     });
 
     // All Courses tab
-    document.getElementById('cf-search').addEventListener('input', e => {
-        clearTimeout(cfTimer);
-        cfTimer = setTimeout(() => { cfFilter.search = e.target.value.toLowerCase(); cfPage = 1; renderCoursesTab(); }, 220);
+    byId('cf-search').addEventListener('input', debounce(event => {
+        coursesFilter.search = event.target.value.toLowerCase();
+        coursesPage = 1;
+        renderCoursesTab();
+    }, 220));
+
+    byId('cf-status').addEventListener('change', event => {
+        coursesFilter.status = event.target.value;
+        coursesPage = 1;
+        renderCoursesTab();
     });
-    document.getElementById('cf-status').addEventListener('change', e => { cfFilter.status = e.target.value; cfPage = 1; renderCoursesTab(); });
-    document.getElementById('cf-country').addEventListener('change', e => { cfFilter.country = e.target.value; cfPage = 1; renderCoursesTab(); });
-    document.getElementById('cf-domain').addEventListener('change', e => { cfFilter.domain = e.target.value; cfPage = 1; renderCoursesTab(); });
-    document.getElementById('cf-qs').addEventListener('change', e => { cfFilter.qs = e.target.value; cfPage = 1; renderCoursesTab(); });
-    document.getElementById('cf-reset').addEventListener('click', () => {
-        cfFilter = { search: '', status: 'all', country: 'all', domain: 'all', qs: 'any' };
-        document.getElementById('cf-search').value  = '';
-        document.getElementById('cf-status').value  = 'all';
-        document.getElementById('cf-country').value = 'all';
-        document.getElementById('cf-domain').value  = 'all';
-        document.getElementById('cf-qs').value      = 'any';
-        cfPage = 1;
+
+    byId('cf-country').addEventListener('change', event => {
+        coursesFilter.country = event.target.value;
+        coursesPage = 1;
+        renderCoursesTab();
+    });
+
+    byId('cf-domain').addEventListener('change', event => {
+        coursesFilter.domain = event.target.value;
+        coursesPage = 1;
+        renderCoursesTab();
+    });
+
+    byId('cf-qs').addEventListener('change', event => {
+        coursesFilter.qs = event.target.value;
+        coursesPage = 1;
+        renderCoursesTab();
+    });
+
+    byId('cf-reset').addEventListener('click', () => {
+        coursesFilter = { search: '', status: 'all', country: 'all', domain: 'all', qs: 'any' };
+        byId('cf-search').value  = '';
+        byId('cf-status').value  = 'all';
+        byId('cf-country').value = 'all';
+        byId('cf-domain').value  = 'all';
+        byId('cf-qs').value      = 'any';
+        coursesPage = 1;
         renderCoursesTab();
     });
 
     // Pagination
-    document.getElementById('vf-prev').addEventListener('click', () => { if (vfPage > 1) { vfPage--; renderVerificationTab(); } });
-    document.getElementById('vf-next').addEventListener('click', () => { vfPage++; renderVerificationTab(); });
-    document.getElementById('cf-prev').addEventListener('click', () => { if (cfPage > 1) { cfPage--; renderCoursesTab(); } });
-    document.getElementById('cf-next').addEventListener('click', () => { cfPage++; renderCoursesTab(); });
+    byId('vf-prev').addEventListener('click', () => {
+        if (verificationPage > 1) {
+            verificationPage--;
+            renderVerificationTab();
+        }
+    });
+
+    byId('vf-next').addEventListener('click', () => {
+        const totalPages = getVerificationTotalPages();
+        if (verificationPage < totalPages) {
+            verificationPage++;
+            renderVerificationTab();
+        }
+    });
+
+    byId('cf-prev').addEventListener('click', () => {
+        if (coursesPage > 1) {
+            coursesPage--;
+            renderCoursesTab();
+        }
+    });
+
+    byId('cf-next').addEventListener('click', () => {
+        const totalPages = getCoursesTotalPages();
+        if (coursesPage < totalPages) {
+            coursesPage++;
+            renderCoursesTab();
+        }
+    });
 }
 
-// ── KPI click-through to Verification tab ────────────────────────
+/* ================================================================
+   KPI click-through to the Verification tab
+   ================================================================ */
+
 function initKpiClickThrough() {
-    document.getElementById('kpi-disc-card').addEventListener('click', () => {
-        vfFilter.status = 'Discrepancy'; vfPage = 1;
-        document.getElementById('vf-status').value = 'Discrepancy';
-        document.querySelector('.nav-tab[data-tab="tab-verification"]').click();
-    });
-    document.getElementById('kpi-err-card').addEventListener('click', () => {
-        vfFilter.status = 'Error'; vfPage = 1;
-        document.getElementById('vf-status').value = 'Error';
-        document.querySelector('.nav-tab[data-tab="tab-verification"]').click();
+    byId('kpi-disc-card').addEventListener('click', () => {
+        verificationFilter.status = 'Discrepancy';
+        verificationPage = 1;
+        byId('vf-status').value = 'Discrepancy';
+        byId('nav-tab-verification')?.click();
     });
 
-    // KPI strip cards
-    document.getElementById('vf-strip').addEventListener('click', e => {
-        const card = e.target.closest('.kpi-strip-card');
+    byId('kpi-err-card').addEventListener('click', () => {
+        verificationFilter.status = 'Error';
+        verificationPage = 1;
+        byId('vf-status').value = 'Error';
+        byId('nav-tab-verification')?.click();
+    });
+
+    byId('vf-strip').addEventListener('click', event => {
+        const card = event.target.closest('.kpi-strip-card');
         if (!card) return;
+
         document.querySelectorAll('.kpi-strip-card').forEach(c => c.classList.remove('active'));
         card.classList.add('active');
+
         const status = card.dataset.vfStatus;
-        vfFilter.status = status; vfPage = 1;
-        document.getElementById('vf-status').value = status;
+        verificationFilter.status = status;
+        verificationPage = 1;
+        byId('vf-status').value = status;
         renderVerificationTab();
     });
 }
 
-// ── DASHBOARD ─────────────────────────────────────────────────────
+/* ================================================================
+   Dashboard
+   ================================================================ */
 
 function renderDashboard() {
-    const total = allCourses.length;
-    const verified = allCourses.filter(c => c.status === 'Verified').length;
-    const disc     = allCourses.filter(c => c.status === 'Discrepancy').length;
-    const err      = allCourses.filter(c => c.status === 'Error').length;
-    const pct      = total ? Math.round((verified / total) * 100) : 0;
+    const counts = computeStatusCounts();
+    const verifiedPercent = counts.total ? Math.round((counts.verified / counts.total) * 100) : 0;
 
-    setText('kpi-total',       total.toLocaleString());
-    setText('kpi-verified',    verified.toLocaleString());
-    setText('kpi-verified-pct', `${pct}% of total`);
-    setText('kpi-disc',        disc.toLocaleString());
-    setText('kpi-err',         err.toLocaleString());
+    setElementText('kpi-total',        counts.total.toLocaleString());
+    setElementText('kpi-verified',     counts.verified.toLocaleString());
+    setElementText('kpi-verified-pct', `${verifiedPercent}% of total`);
+    setElementText('kpi-disc',         counts.discrepancy.toLocaleString());
+    setElementText('kpi-err',          counts.error.toLocaleString());
 
     renderDomainChart();
-    renderStatusDonut(verified, disc, err);
+    renderStatusDonut(counts.verified, counts.discrepancy, counts.error);
     renderCountryList();
+}
+
+/**
+ * Count statuses in a single pass over allCourses.
+ */
+function computeStatusCounts() {
+    let total = 0;
+    let verified = 0;
+    let discrepancy = 0;
+    let error = 0;
+
+    for (const course of allCourses) {
+        total++;
+        if (course.status === 'Verified') verified++;
+        else if (course.status === 'Discrepancy') discrepancy++;
+        else if (course.status === 'Error') error++;
+    }
+
+    return { total, verified, discrepancy, error };
 }
 
 function renderDomainChart() {
     const counts = {};
-    DOMAIN_RANGES.forEach(r => { counts[r.label] = 0; });
-    allCourses.forEach(c => {
-        const lbl = getDomainLabel(c.id);
-        counts[lbl] = (counts[lbl] || 0) + 1;
-    });
+    DOMAIN_RANGES.forEach(range => { counts[range.label] = 0; });
+
+    for (const course of allCourses) {
+        counts[course.domainLabel] = (counts[course.domainLabel] || 0) + 1;
+    }
 
     const labels = Object.keys(counts);
-    const data   = Object.values(counts);
+    const data = Object.values(counts);
+
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const textCol = isDark ? '#94a3b8' : '#64748b';
-    const gridCol = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const textColor = isDark ? '#94a3b8' : '#64748b';
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
-    const ctx = document.getElementById('domainBarChart').getContext('2d');
-    if (domainChart) domainChart.destroy();
+    const ctx = byId('domainBarChart').getContext('2d');
+    if (domainBarChart) domainBarChart.destroy();
 
-    domainChart = new Chart(ctx, {
+    domainBarChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels,
             datasets: [{
                 data,
                 backgroundColor: 'rgba(99,102,241,0.6)',
-                borderColor:     'rgba(99,102,241,1)',
+                borderColor: 'rgba(99,102,241,1)',
                 borderWidth: 1,
                 borderRadius: 6,
                 hoverBackgroundColor: 'rgba(99,102,241,0.85)',
             }],
         },
         options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.raw.toLocaleString()} courses` } } },
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.raw.toLocaleString()} courses` } }
+            },
             scales: {
-                x: { ticks: { color: textCol, font: { size: 11 } }, grid: { color: gridCol } },
-                y: { ticks: { color: textCol, font: { size: 11 } }, grid: { color: gridCol }, beginAtZero: true },
+                x: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor } },
+                y: { ticks: { color: textColor, font: { size: 11 } }, grid: { color: gridColor }, beginAtZero: true },
             },
         },
     });
 }
 
-function renderStatusDonut(verified, disc, err) {
+function renderStatusDonut(verified, discrepancy, error) {
     const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
-    const textCol = isDark ? '#94a3b8' : '#64748b';
-    const ctx = document.getElementById('statusDonut').getContext('2d');
-    if (statusChart) statusChart.destroy();
+    const textColor = isDark ? '#94a3b8' : '#64748b';
 
-    statusChart = new Chart(ctx, {
+    const ctx = byId('statusDonut').getContext('2d');
+    if (statusDonutChart) statusDonutChart.destroy();
+
+    statusDonutChart = new Chart(ctx, {
         type: 'doughnut',
         data: {
             labels: ['Verified', 'Discrepancy', 'Error'],
             datasets: [{
-                data: [verified, disc, err],
+                data: [verified, discrepancy, error],
                 backgroundColor: ['rgba(34,197,94,0.75)', 'rgba(245,158,11,0.75)', 'rgba(239,68,68,0.75)'],
-                borderColor:     ['#22c55e', '#f59e0b', '#ef4444'],
+                borderColor: ['#22c55e', '#f59e0b', '#ef4444'],
                 borderWidth: 2,
                 hoverOffset: 8,
             }],
         },
         options: {
-            responsive: true, maintainAspectRatio: false,
+            responsive: true,
+            maintainAspectRatio: false,
             cutout: '68%',
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()}` } } },
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()}` } }
+            },
         },
     });
 
-    // Custom legend
-    const legend = document.getElementById('donut-legend');
-    const total  = verified + disc + err;
-    legend.innerHTML = [
-        { label: 'Verified',     color: '#22c55e', val: verified },
-        { label: 'Discrepancy',  color: '#f59e0b', val: disc     },
-        { label: 'Error',        color: '#ef4444', val: err      },
-    ].map(i => `
-        <div class="donut-legend-item">
-            <div class="donut-dot" style="background:${i.color}"></div>
-            ${i.label} — ${i.val.toLocaleString()} (${total ? Math.round((i.val/total)*100) : 0}%)
-        </div>
-    `).join('');
+    // Custom HTML legend beneath the donut
+    const legend = byId('donut-legend');
+    const total = verified + discrepancy + error;
+    const items = [
+        { label: 'Verified',    color: '#22c55e', value: verified },
+        { label: 'Discrepancy', color: '#f59e0b', value: discrepancy },
+        { label: 'Error',       color: '#ef4444', value: error },
+    ];
+
+    legend.innerHTML = items.map(item => {
+        const percent = total ? Math.round((item.value / total) * 100) : 0;
+        return `
+            <div class="donut-legend-item">
+                <div class="donut-dot" style="background:${item.color}"></div>
+                ${item.label} — ${item.value.toLocaleString()} (${percent}%)
+            </div>
+        `;
+    }).join('');
 }
 
 function renderCountryList() {
     const counts = {};
-    allCourses.forEach(c => {
-        if (c.country) counts[c.country] = (counts[c.country] || 0) + 1;
-    });
+    for (const course of allCourses) {
+        if (course.country) {
+            counts[course.country] = (counts[course.country] || 0) + 1;
+        }
+    }
 
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 15);
-    const max = sorted[0]?.[1] || 1;
+    const sorted = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15);
 
-    document.getElementById('country-list').innerHTML = sorted.map(([name, count], i) => `
-        <div class="country-row">
-            <div class="country-rank">${i + 1}</div>
-            <div class="country-name" title="${escHtml(name)}">${escHtml(name)}</div>
-            <div class="country-bar-wrap">
-                <div class="country-bar" style="width:${Math.round((count / max) * 100)}%"></div>
+    const maxCount = sorted[0]?.[1] || 1;
+
+    byId('country-list').innerHTML = sorted.map(([name, count], index) => {
+        const width = Math.round((count / maxCount) * 100);
+        return `
+            <div class="country-row">
+                <div class="country-rank">${index + 1}</div>
+                <div class="country-name" title="${escapeHtml(name)}">${escapeHtml(name)}</div>
+                <div class="country-bar-wrap">
+                    <div class="country-bar" style="width:${width}%"></div>
+                </div>
+                <div class="country-count">${count}</div>
             </div>
-            <div class="country-count">${count}</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
-// ── VERIFICATION TAB ──────────────────────────────────────────────
+/* ================================================================
+   Verification tab
+   ================================================================ */
 
-function applyVfFilter(courses) {
-    const { search, status, country, domain } = vfFilter;
-    return courses.filter(c => {
-        if (status === 'issues') { if (c.status === 'Verified') return false; }
-        else if (status !== 'all') { if (c.status !== status) return false; }
-        if (country !== 'all' && c.country !== country) return false;
-        if (domain  !== 'all' && getDomainLabel(c.id) !== domain) return false;
-        if (search) {
-            const hay = `${c.name} ${c.university} ${c.country} ${c.disc_reason}`.toLowerCase();
-            if (!hay.includes(search)) return false;
+function filterVerificationCourses(courses) {
+    const { search, status, country, domain } = verificationFilter;
+    const normalizedSearch = search.trim();
+
+    return courses.filter(course => {
+        if (status === 'issues') {
+            if (course.status === 'Verified') return false;
+        } else if (status !== 'all' && course.status !== status) {
+            return false;
         }
+
+        if (country !== 'all' && course.country !== country) return false;
+        if (domain !== 'all' && course.domainLabel !== domain) return false;
+
+        if (normalizedSearch && !course._vfSearchIndex.includes(normalizedSearch)) return false;
+
         return true;
     });
+}
+
+function getVerificationTotalPages() {
+    const filtered = filterVerificationCourses(allCourses);
+    return Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
 }
 
 function renderVerificationTab() {
-    const filtered = applyVfFilter(allCourses);
-    const total    = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (vfPage > totalPages) vfPage = totalPages;
-    const slice = filtered.slice((vfPage - 1) * PAGE_SIZE, vfPage * PAGE_SIZE);
+    const filtered = filterVerificationCourses(allCourses);
+    const total = filtered.length;
+    const totalPages = getVerificationTotalPages();
+    if (verificationPage > totalPages) verificationPage = totalPages;
 
-    // KPI strip
-    setText('vfs-total', total.toLocaleString());
-    setText('vfs-disc',  allCourses.filter(c => c.status === 'Discrepancy').length.toLocaleString());
-    setText('vfs-err',   allCourses.filter(c => c.status === 'Error').length.toLocaleString());
-    setText('vfs-ver',   allCourses.filter(c => c.status === 'Verified').length.toLocaleString());
+    const start = (verificationPage - 1) * PAGE_SIZE;
+    const pageSlice = filtered.slice(start, start + PAGE_SIZE);
 
-    // Table
-    const tbody = document.getElementById('vf-tbody');
-    if (!slice.length) {
+    // KPI strip uses global counts so the totals stay stable while filtering
+    const counts = computeStatusCounts();
+    setElementText('vfs-total', counts.verified.toLocaleString());
+    setElementText('vfs-disc',  counts.discrepancy.toLocaleString());
+    setElementText('vfs-err',   counts.error.toLocaleString());
+    setElementText('vfs-ver',   counts.verified.toLocaleString());
+
+    const tbody = byId('vf-tbody');
+    if (!pageSlice.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No courses match the current filters.</td></tr>';
     } else {
-        tbody.innerHTML = slice.map((c, i) => `
-            <tr onclick="openModal(${c.id})" title="Click to view details">
-                <td>${(vfPage - 1) * PAGE_SIZE + i + 1}</td>
-                <td title="${escHtml(c.name)}" style="max-width:260px;">${escHtml(c.name)}</td>
-                <td title="${escHtml(c.university)}">${escHtml(c.university || '—')}</td>
-                <td>${escHtml(c.country || '—')}</td>
-                <td><span style="font-size:0.78rem; color:var(--text-muted);">${getDomainLabel(c.id)}</span></td>
-                <td>${badgeHtml(c.status)}</td>
-                <td style="font-size:0.78rem; color:var(--text-muted); max-width:200px; overflow:hidden; text-overflow:ellipsis;" title="${escHtml(c.disc_reason || c.issue_sub_type || '')}">${escHtml(c.disc_reason || c.issue_sub_type || '—')}</td>
+        tbody.innerHTML = pageSlice.map((course, index) => `
+            <tr onclick="openModal(${course.id})" title="Click to view details">
+                <td>${start + index + 1}</td>
+                <td title="${escapeHtml(course.name)}" style="max-width:260px;">${escapeHtml(course.name)}</td>
+                <td title="${escapeHtml(course.university)}">${escapeHtml(course.university || '—')}</td>
+                <td>${escapeHtml(course.country || '—')}</td>
+                <td><span style="font-size:0.78rem; color:var(--text-muted);">${course.domainLabel}</span></td>
+                <td>${getStatusBadgeHtml(course.status)}</td>
+                <td style="font-size:0.78rem; color:var(--text-muted); max-width:200px; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(course.disc_reason || course.issue_sub_type || '')}">${escapeHtml(course.disc_reason || course.issue_sub_type || '—')}</td>
             </tr>
         `).join('');
     }
 
-    // Pagination
-    setText('vf-pag-info', `Page ${vfPage} of ${totalPages} (${total.toLocaleString()} courses)`);
-    document.getElementById('vf-prev').disabled = vfPage <= 1;
-    document.getElementById('vf-next').disabled = vfPage >= totalPages;
+    setElementText('vf-pag-info', `Page ${verificationPage} of ${totalPages} (${total.toLocaleString()} courses)`);
+    byId('vf-prev').disabled = verificationPage <= 1;
+    byId('vf-next').disabled = verificationPage >= totalPages;
 }
 
-// ── ALL COURSES TAB ───────────────────────────────────────────────
+/* ================================================================
+   All Courses tab
+   ================================================================ */
 
-function applyCfFilter(courses) {
-    const { search, status, country, domain, qs } = cfFilter;
-    return courses.filter(c => {
-        if (status !== 'all' && c.status !== status) return false;
-        if (country !== 'all' && c.country !== country) return false;
-        if (domain  !== 'all' && getDomainLabel(c.id) !== domain) return false;
-        if (qs === 'yes' && !c.has_qs_badge) return false;
-        if (qs === 'no'  &&  c.has_qs_badge) return false;
-        if (search) {
-            const hay = `${c.name} ${c.university} ${c.country} ${c.skills || ''}`.toLowerCase();
-            if (!hay.includes(search)) return false;
-        }
+function filterAllCourses(courses) {
+    const { search, status, country, domain, qs } = coursesFilter;
+    const normalizedSearch = search.trim();
+
+    return courses.filter(course => {
+        if (status !== 'all' && course.status !== status) return false;
+        if (country !== 'all' && course.country !== country) return false;
+        if (domain !== 'all' && course.domainLabel !== domain) return false;
+
+        if (qs === 'yes' && !course.has_qs_badge) return false;
+        if (qs === 'no'  &&  course.has_qs_badge) return false;
+
+        if (normalizedSearch && !course._cfSearchIndex.includes(normalizedSearch)) return false;
+
         return true;
     });
 }
 
-function renderCoursesTab() {
-    const filtered   = applyCfFilter(allCourses);
-    const total      = filtered.length;
-    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (cfPage > totalPages) cfPage = totalPages;
-    const slice = filtered.slice((cfPage - 1) * PAGE_SIZE, cfPage * PAGE_SIZE);
+function getCoursesTotalPages() {
+    const filtered = filterAllCourses(allCourses);
+    return Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+}
 
-    const tbody = document.getElementById('cf-tbody');
-    if (!slice.length) {
+function renderCoursesTab() {
+    const filtered = filterAllCourses(allCourses);
+    const total = filtered.length;
+    const totalPages = getCoursesTotalPages();
+    if (coursesPage > totalPages) coursesPage = totalPages;
+
+    const start = (coursesPage - 1) * PAGE_SIZE;
+    const pageSlice = filtered.slice(start, start + PAGE_SIZE);
+
+    const tbody = byId('cf-tbody');
+    if (!pageSlice.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No courses match the current filters.</td></tr>';
     } else {
-        tbody.innerHTML = slice.map((c, i) => `
-            <tr onclick="openModal(${c.id})" title="Click to view details">
-                <td>${(cfPage - 1) * PAGE_SIZE + i + 1}</td>
-                <td title="${escHtml(c.name)}">${escHtml(c.name)}</td>
-                <td title="${escHtml(c.university)}">${escHtml(c.university || '—')}</td>
-                <td>${escHtml(c.country || '—')}</td>
-                <td><span style="font-size:0.78rem; color:var(--text-muted);">${getDomainLabel(c.id)}</span></td>
-                <td>${c.has_qs_badge ? '<span class="badge" style="background:var(--blue-bg);color:var(--blue);border:1px solid rgba(59,130,246,0.25);">QS ✓</span>' : '—'}</td>
-                <td>${badgeHtml(c.status)}</td>
+        tbody.innerHTML = pageSlice.map((course, index) => `
+            <tr onclick="openModal(${course.id})" title="Click to view details">
+                <td>${start + index + 1}</td>
+                <td title="${escapeHtml(course.name)}">${escapeHtml(course.name)}</td>
+                <td title="${escapeHtml(course.university)}">${escapeHtml(course.university || '—')}</td>
+                <td>${escapeHtml(course.country || '—')}</td>
+                <td><span style="font-size:0.78rem; color:var(--text-muted);">${course.domainLabel}</span></td>
+                <td>${course.has_qs_badge ? '<span class="badge" style="background:var(--blue-bg);color:var(--blue);border:1px solid rgba(59,130,246,0.25);">QS ✓</span>' : '—'}</td>
+                <td>${getStatusBadgeHtml(course.status)}</td>
             </tr>
         `).join('');
     }
 
-    setText('cf-pag-info', `Page ${cfPage} of ${totalPages} (${total.toLocaleString()} courses)`);
-    document.getElementById('cf-prev').disabled = cfPage <= 1;
-    document.getElementById('cf-next').disabled = cfPage >= totalPages;
+    setElementText('cf-pag-info', `Page ${coursesPage} of ${totalPages} (${total.toLocaleString()} courses)`);
+    byId('cf-prev').disabled = coursesPage <= 1;
+    byId('cf-next').disabled = coursesPage >= totalPages;
 }
 
-// ── MODAL ─────────────────────────────────────────────────────────
+/* ================================================================
+   Modal
+   ================================================================ */
 
 function initModal() {
-    document.getElementById('modal-close').addEventListener('click', closeModal);
-    document.getElementById('course-modal').addEventListener('click', e => {
-        if (e.target === e.currentTarget) closeModal();
+    byId('modal-close').addEventListener('click', closeModal);
+    byId('course-modal').addEventListener('click', event => {
+        if (event.target === event.currentTarget) closeModal();
     });
-    document.getElementById('modal-solve-all').addEventListener('click', solveAll);
+    byId('modal-solve-all').addEventListener('click', solveAll);
 }
 
 async function openModal(courseId) {
-    const cBase = allCourses.find(x => x.id == courseId);
-    if (!cBase) return;
-    
-    // Show loading state while fetching heavy details
-    setText('modal-title', cBase.name || '—');
-    setText('modal-sub', 'Fetching details from database...');
-    document.getElementById('modal-meta').innerHTML = '';
-    document.getElementById('modal-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Loading comparison data...</td></tr>';
-    document.getElementById('course-modal').classList.add('open');
+    const baseCourse = allCourses.find(course => course.id == courseId);
+    if (!baseCourse) return;
 
-    // Fetch full course data (lazy load) from Vercel API
+    // Show immediate skeleton while heavy details load
+    setElementText('modal-title', baseCourse.name || '—');
+    setElementText('modal-sub', 'Fetching details from database…');
+    byId('modal-meta').innerHTML = '';
+    byId('modal-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">Loading comparison data…</td></tr>';
+    byId('course-modal').classList.add('open');
+
     try {
-        const res = await fetch(`/api/get_course_details?id=${courseId}`);
-        if (!res.ok) {
-            const err = await res.text();
-            throw new Error(`API error ${res.status}: ${err}`);
+        const response = await fetch(`/api/get_course_details?id=${courseId}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API error ${response.status}: ${errorText}`);
         }
-        const data = await res.json();
-        const c = data.document;
-        if (!c) throw new Error('Course not found');
-        modalCourse = c;
+        const data = await response.json();
+        const course = data.document;
+        if (!course) throw new Error('Course not found');
 
-        setText('modal-sub',   `${c.university || '—'}  ·  ${c.country || '—'}  ·  Page ${c.pdf_page || '?'}`);
+        activeModalCourse = course;
 
-        // Badge
-        const badge = document.getElementById('modal-badge');
-        badge.className = 'badge badge-' + (c.status || '').toLowerCase();
-        badge.textContent = c.status || '—';
+        setElementText('modal-sub', `${course.university || '—'} · ${course.country || '—'} · Page ${course.pdf_page || '?'}`);
+
+        const badge = byId('modal-badge');
+        badge.className = 'badge badge-' + (course.status || '').toLowerCase();
+        badge.textContent = course.status || '—';
 
         // Meta chips
-        document.getElementById('modal-meta').innerHTML = [
-            ['Cost',     c.cost],
-            ['Duration', c.duration],
-            ['Mode',     c.mode],
-            ['Domain',   getDomainLabel(c.id)],
-            ['QS',       c.has_qs_badge ? '✓ Ranked' : '—'],
-            ['NIRF',     c.has_nirf_badge ? '✓ Ranked' : '—'],
-        ].map(([k, v]) => `<div class="meta-chip"><strong>${k}:</strong> ${escHtml(String(v || '—'))}</div>`).join('');
+        byId('modal-meta').innerHTML = [
+            ['Cost',     course.cost],
+            ['Duration', course.duration],
+            ['Mode',     course.mode],
+            ['Domain',   getDomainLabel(course.id)],
+            ['QS',       course.has_qs_badge ? '✓ Ranked' : '—'],
+            ['NIRF',     course.has_nirf_badge ? '✓ Ranked' : '—'],
+        ].map(([label, value]) => `
+            <div class="meta-chip"><strong>${label}:</strong> ${escapeHtml(String(value || '—'))}</div>
+        `).join('');
 
         // Comparison table
-        const rows     = c.pdf_table || [];
-        const solved   = c.solved_attrs || [];
-        const hasMismatch = rows.some(r => r.original !== r.verified);
+        const rows = course.pdf_table || [];
+        const solved = course.solved_attrs || [];
+        const hasMismatch = rows.some(isTableRowMismatch);
 
+        const tbody = byId('modal-tbody');
         if (!rows.length) {
-            document.getElementById('modal-tbody').innerHTML = '<tr><td colspan="5" class="empty-state">No comparison data available.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No comparison data available.</td></tr>';
         } else {
-            document.getElementById('modal-tbody').innerHTML = rows.map(r => {
-                const isSolved  = solved.includes(r.attribute?.toLowerCase());
-                const isMismatch = r.status ? (r.status.toUpperCase() !== 'MATCH') : (r.original !== r.verified);
-                const rowClass  = isSolved ? 'solved-row' : isMismatch ? 'mismatch-row' : '';
+            tbody.innerHTML = rows.map(row => {
+                const solvedKey = String(row.attribute || '').toLowerCase();
+                const isSolved = solved.includes(solvedKey);
+                const isMismatch = isTableRowMismatch(row);
+                const rowClass = isSolved ? 'solved-row' : isMismatch ? 'mismatch-row' : '';
                 const matchIcon = isMismatch
                     ? '<span class="match-icon match-no">✕</span>'
                     : '<span class="match-icon match-yes">✓</span>';
-                const btn = isMismatch
+                const actionButton = isMismatch
                     ? `<button class="btn-solve ${isSolved ? 'solved' : ''}"
-                           onclick="solveAttr(${c.id}, '${escJs(r.attribute)}', ${isSolved})"
+                           onclick="solveAttr(${course.id}, '${escapeJsString(row.attribute)}', ${isSolved})"
                            title="${isSolved ? 'Undo resolve' : 'Mark as resolved'}">
                            ${isSolved ? '✓ Solved' : 'Solve'}
                        </button>`
                     : '<span style="color:var(--text-dim); font-size:0.78rem;">OK</span>';
+
                 return `<tr class="${rowClass}">
-                    <td>${escHtml(r.attribute || '—')}</td>
-                    <td>${escHtml(r.original  || '—')}</td>
-                    <td>${escHtml(r.verified  || '—')}</td>
+                    <td>${escapeHtml(row.attribute || '—')}</td>
+                    <td>${escapeHtml(row.original  || '—')}</td>
+                    <td>${escapeHtml(row.verified  || '—')}</td>
                     <td>${matchIcon}</td>
-                    <td>${btn}</td>
+                    <td>${actionButton}</td>
                 </tr>`;
             }).join('');
         }
 
-        // Hint + Solve All button
-        const allSolved = rows.every(r => {
-            const isMismatch = r.status ? (r.status.toUpperCase() !== 'MATCH') : (r.original !== r.verified);
-            return !isMismatch || solved.includes(r.attribute?.toLowerCase());
+        // Hint and bulk-resolve button
+        byId('modal-hint').textContent = course.disc_reason || '';
+        const solveAllBtn = byId('modal-solve-all');
+        const allResolved = rows.every(row => {
+            if (!isTableRowMismatch(row)) return true;
+            return solved.includes(String(row.attribute || '').toLowerCase());
         });
-        document.getElementById('modal-hint').textContent = c.disc_reason || '';
-        const solveAllBtn = document.getElementById('modal-solve-all');
-        solveAllBtn.style.display = (hasMismatch && c.status !== 'Verified') ? 'inline-flex' : 'none';
-        solveAllBtn.textContent   = allSolved ? '✓ All Resolved' : '✓ Mark All Resolved';
 
-    } catch (err) {
-        document.getElementById('modal-tbody').innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--red)">Error loading details: ${err.message}</td></tr>`;
+        solveAllBtn.style.display = (hasMismatch && course.status !== 'Verified') ? 'inline-flex' : 'none';
+        solveAllBtn.textContent = allResolved ? '✓ All Resolved' : '✓ Mark All Resolved';
+
+    } catch (error) {
+        byId('modal-tbody').innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--red)">Error loading details: ${escapeHtml(error.message)}</td></tr>`;
     }
 }
 
 function closeModal() {
-    document.getElementById('course-modal').classList.remove('open');
-    modalCourse = null;
+    byId('course-modal').classList.remove('open');
+    activeModalCourse = null;
 }
 
-// ── SOLVE ─────────────────────────────────────────────────────────
+/* ================================================================
+   Resolve / solve actions
+   ================================================================ */
 
-async function solveAttr(courseId, attr, isSolved) {
-    const c = allCourses.find(x => x.id == courseId);
-    if (!c) return;
+/**
+ * Toggle a single comparison attribute as resolved/unresolved.
+ */
+async function solveAttr(courseId, attribute, isSolved) {
+    const course = allCourses.find(c => c.id == courseId);
+    if (!course) return;
 
-    let solved = [...(c.solved_attrs || [])];
-    const key  = attr.toLowerCase();
+    // Snapshot current state so we can roll back on API failure
+    const previousSolved = Array.isArray(course.solved_attrs) ? [...course.solved_attrs] : [];
+    const previousStatus = course.status;
+
+    const key = String(attribute || '').toLowerCase();
+    const solvedSet = new Set(previousSolved.map(a => String(a).toLowerCase()));
 
     if (isSolved) {
-        // Undo: remove from solved list
-        solved = solved.filter(s => s !== key);
+        solvedSet.delete(key);
     } else {
-        // Solve: add to solved list
-        if (!solved.includes(key)) solved.push(key);
+        solvedSet.add(key);
     }
 
-    // Determine new status: if all mismatched attrs are solved → Verified
-    const rows = c.pdf_table || [];
-    const mismatchAttrs = rows
-        .filter(r => r.status ? (r.status.toUpperCase() !== 'MATCH') : (r.original !== r.verified))
-        .map(r => r.attribute?.toLowerCase());
-    const allSolved = mismatchAttrs.every(a => solved.includes(a));
+    const solvedArray = Array.from(solvedSet);
 
-    const newStatus   = allSolved ? 'Verified'    : c.status;
-    const newCategory = allSolved ? 'verified'    : c.issue_category;
+    // If every mismatched attribute is resolved, mark the whole course Verified
+    const rows = course.pdf_table || [];
+    const mismatchAttributes = rows
+        .filter(isTableRowMismatch)
+        .map(r => String(r.attribute || '').toLowerCase());
 
+    const allResolved = mismatchAttributes.every(attrKey => solvedSet.has(attrKey));
     const update = {
-        solved_attrs:   solved,
-        status:         newStatus,
-        issue_category: newCategory,
+        solved_attrs:   solvedArray,
+        status:         allResolved ? 'Verified' : course.status,
+        issue_category: allResolved ? 'verified' : course.issue_category,
     };
 
-    // Optimistic local update
-    Object.assign(c, update);
+    Object.assign(course, update);
 
     try {
-        await mongoUpdateCourse(courseId, update);
-        // Re-open modal to reflect new state
+        await updateCourse(courseId, update);
         openModal(courseId);
-        // Refresh tab counts
         renderVerificationTab();
         renderCoursesTab();
-        // Refresh dashboard KPIs
-        const verified = allCourses.filter(x => x.status === 'Verified').length;
-        const disc     = allCourses.filter(x => x.status === 'Discrepancy').length;
-        const err      = allCourses.filter(x => x.status === 'Error').length;
-        const total    = allCourses.length;
-        setText('kpi-verified', verified.toLocaleString());
-        setText('kpi-verified-pct', `${Math.round((verified/total)*100)}% of total`);
-        setText('kpi-disc', disc.toLocaleString());
-        setText('kpi-err',  err.toLocaleString());
-        renderStatusDonut(verified, disc, err);
-    } catch (err) {
-        // Revert optimistic update on failure
-        Object.assign(c, { solved_attrs: c.solved_attrs, status: c.status });
-        alert('Failed to save: ' + err.message);
+        refreshDashboardKpis();
+    } catch (error) {
+        // Roll back the optimistic local update
+        course.solved_attrs = previousSolved;
+        course.status = previousStatus;
+        alert('Failed to save: ' + error.message);
     }
 }
 
+/**
+ * Mark every mismatched comparison attribute as resolved at once.
+ */
 async function solveAll() {
-    if (!modalCourse) return;
-    const c    = modalCourse;
-    const rows = c.pdf_table || [];
-    const solved = rows.map(r => r.attribute?.toLowerCase()).filter(Boolean);
+    if (!activeModalCourse) return;
+
+    const course = activeModalCourse;
+    const rows = course.pdf_table || [];
+    const solvedKeys = rows
+        .map(r => String(r.attribute || '').toLowerCase())
+        .filter(Boolean);
 
     const update = {
-        solved_attrs:   solved,
+        solved_attrs:   solvedKeys,
         status:         'Verified',
         issue_category: 'verified',
     };
-    Object.assign(c, update);
+
+    const localCourse = allCourses.find(c => c.id == course.id);
+    const previousLocalState = localCourse
+        ? { solved_attrs: Array.isArray(localCourse.solved_attrs) ? [...localCourse.solved_attrs] : [], status: localCourse.status }
+        : null;
+
+    if (localCourse) Object.assign(localCourse, update);
 
     try {
-        await mongoUpdateCourse(c.id, update);
-        openModal(c.id);
+        await updateCourse(course.id, update);
+        openModal(course.id);
         renderVerificationTab();
         renderCoursesTab();
-    } catch (err) {
-        alert('Failed to save: ' + err.message);
+        refreshDashboardKpis();
+    } catch (error) {
+        if (localCourse && previousLocalState) {
+            localCourse.solved_attrs = previousLocalState.solved_attrs;
+            localCourse.status = previousLocalState.status;
+        }
+        alert('Failed to save: ' + error.message);
     }
 }
 
-// ── HELPERS ───────────────────────────────────────────────────────
+function refreshDashboardKpis() {
+    const counts = computeStatusCounts();
+    const verifiedPercent = counts.total ? Math.round((counts.verified / counts.total) * 100) : 0;
 
-function setText(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
+    setElementText('kpi-verified',     counts.verified.toLocaleString());
+    setElementText('kpi-verified-pct', `${verifiedPercent}% of total`);
+    setElementText('kpi-disc',         counts.discrepancy.toLocaleString());
+    setElementText('kpi-err',          counts.error.toLocaleString());
+
+    renderStatusDonut(counts.verified, counts.discrepancy, counts.error);
 }
 
-function escHtml(str) {
-    return String(str || '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+/* ================================================================
+   Comparison-row helpers
+   ================================================================ */
 
-function escJs(str) {
-    return String(str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
-}
-
-function badgeHtml(status) {
-    const cls = {
-        Verified:    'badge-verified',
-        Discrepancy: 'badge-discrepancy',
-        Error:       'badge-error',
-    }[status] || 'badge-error';
-    return `<span class="badge ${cls}">${escHtml(status || '—')}</span>`;
+function isTableRowMismatch(row) {
+    if (row.status) return row.status.toUpperCase() !== 'MATCH';
+    return row.original !== row.verified;
 }
