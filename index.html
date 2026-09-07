@@ -1,3 +1,28 @@
+<!--
+  index.html — CourseVerify Dashboard
+  =====================================
+  Entry-point HTML shell for the CourseVerify single-page dashboard.
+
+  Sections:
+    1. Navigation bar (tab switcher, connection status, theme toggle)
+    2. Loading screen shown while the client connects to the backend
+    3. Tabbed main content: Dashboard, Verification, and All Courses
+    4. Course detail modal
+
+  Dependencies:
+    - style.css           : component styling and dark/light themes
+    - config.js           : runtime configuration (API endpoints, etc.)
+    - app.js              : data binding, charts, filtering, pagination, modal logic
+    - Chart.js (CDN)      : domain bar chart and status donut chart
+    - Google Fonts (Inter): typography
+
+  Quality / accessibility notes:
+    - Semantic landmarks, ARIA roles/labels, and live regions support screen
+      readers for dynamically-updated content.
+    - Every <button> has an explicit type="button" to avoid accidental form
+      submission if this markup is ever reused inside a <form>.
+    - Clickable KPI cards are focusable and exposed as buttons.
+-->
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
@@ -5,31 +30,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CourseVerify — Dashboard</title>
     <meta name="description" content="Course verification dashboard — live data from MongoDB Atlas">
+
+    <!--
+      Preconnect to Google Fonts domains to reduce latency.
+      fonts.gstatic.com must use crossorigin because font files are fetched via CORS.
+    -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Application styles and the Chart.js library. -->
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
 <!-- ═══════════════════════ NAVBAR ═══════════════════════ -->
-<nav class="navbar" id="navbar">
-    <a class="nav-logo" href="#">
-        <div class="logo-hex">⬡</div>
+<nav class="navbar" id="navbar" aria-label="Primary navigation">
+    <a class="nav-logo" href="#" aria-current="page">
+        <!-- Decorative hex icon: hidden from assistive technology. -->
+        <div class="logo-hex" aria-hidden="true">⬡</div>
         <span>CourseVerify</span>
     </a>
 
-    <div class="nav-tabs" id="nav-tabs">
-        <a href="#" class="nav-tab active" data-tab="tab-dashboard">Dashboard</a>
-        <a href="#" class="nav-tab" data-tab="tab-verification">Verification</a>
-        <a href="#" class="nav-tab" data-tab="tab-courses">All Courses</a>
+    <!-- Tab list for the three primary views. -->
+    <div class="nav-tabs" id="nav-tabs" role="tablist">
+        <a href="#" id="nav-dashboard" class="nav-tab active" role="tab"
+           aria-controls="tab-dashboard" aria-selected="true" data-tab="tab-dashboard">Dashboard</a>
+        <a href="#" id="nav-verification" class="nav-tab" role="tab"
+           aria-controls="tab-verification" aria-selected="false" data-tab="tab-verification">Verification</a>
+        <a href="#" id="nav-courses" class="nav-tab" role="tab"
+           aria-controls="tab-courses" aria-selected="false" data-tab="tab-courses">All Courses</a>
     </div>
 
     <div class="nav-right">
-        <div class="status-dot" id="conn-dot" title="Connecting…"></div>
+        <!-- Visual connection indicator; the adjacent label carries the live status text. -->
+        <div class="status-dot" id="conn-dot" title="Connecting…" aria-hidden="true"></div>
         <span class="status-label" id="conn-label">Connecting</span>
-        <button class="theme-btn" id="theme-btn" title="Toggle theme">
-            <span id="theme-icon">☀</span>
+
+        <!-- Theme toggle: explicit type and accessible label because it contains only an icon. -->
+        <button class="theme-btn" id="theme-btn" type="button" title="Toggle theme" aria-label="Toggle light/dark theme">
+            <span id="theme-icon" aria-hidden="true">☀</span>
         </button>
     </div>
 </nav>
@@ -37,21 +78,22 @@
 <!-- ═══════════════════════ LOADING SCREEN ═══════════════════════ -->
 <div id="loading-screen" class="loading-screen">
     <div class="loader-wrap">
-        <div class="loader-spinner"></div>
+        <div class="loader-spinner" aria-hidden="true"></div>
         <div class="loader-title">CourseVerify</div>
-        <div class="loader-sub" id="loader-sub">Connecting to serverless API…</div>
+        <!-- aria-live so screen readers announce status updates made by app.js. -->
+        <div class="loader-sub" id="loader-sub" aria-live="polite">Connecting to serverless API…</div>
     </div>
 </div>
 
 <!-- ═══════════════════════ MAIN PAGE ═══════════════════════ -->
-<div class="page" id="main-page" style="display:none;">
+<div class="page" id="main-page" role="main" style="display:none;">
 
     <!-- ══════════ DASHBOARD TAB ══════════ -->
-    <div id="tab-dashboard" class="tab-content active">
+    <div id="tab-dashboard" class="tab-content active" role="tabpanel" aria-labelledby="nav-dashboard">
         <div class="tab-wrap">
 
             <!-- KPI Cards -->
-            <div class="kpi-row">
+            <div class="kpi-row" aria-label="Key performance indicators">
                 <div class="kpi-card">
                     <div class="kpi-label">Total Courses</div>
                     <div class="kpi-value" id="kpi-total">—</div>
@@ -62,12 +104,16 @@
                     <div class="kpi-value" id="kpi-verified">—</div>
                     <div class="kpi-sub" id="kpi-verified-pct">— % of total</div>
                 </div>
-                <div class="kpi-card kpi-yellow" id="kpi-disc-card" style="cursor:pointer;" title="Click to view Discrepancies">
+
+                <!-- Discrepancy and Error cards are clickable; make them keyboard-focusable buttons. -->
+                <div class="kpi-card kpi-yellow" id="kpi-disc-card"
+                     role="button" tabindex="0" style="cursor:pointer;" title="Click to view Discrepancies">
                     <div class="kpi-label">Discrepancies</div>
                     <div class="kpi-value" id="kpi-disc">—</div>
                     <div class="kpi-sub">Need review</div>
                 </div>
-                <div class="kpi-card kpi-red" id="kpi-err-card" style="cursor:pointer;" title="Click to view Web Issues">
+                <div class="kpi-card kpi-red" id="kpi-err-card"
+                     role="button" tabindex="0" style="cursor:pointer;" title="Click to view Web Issues">
                     <div class="kpi-label">Web Issues / Errors</div>
                     <div class="kpi-value" id="kpi-err">—</div>
                     <div class="kpi-sub">Failed verification</div>
@@ -85,7 +131,7 @@
                         </div>
                     </div>
                     <div class="chart-wrap" style="height:320px;">
-                        <canvas id="domainBarChart"></canvas>
+                        <canvas id="domainBarChart" aria-label="Bar chart of courses grouped by domain"></canvas>
                     </div>
                 </div>
 
@@ -97,8 +143,9 @@
                             <div class="panel-sub">Courses by country of origin</div>
                         </div>
                     </div>
-                    <div id="country-list" class="country-list">
-                        <!-- Populated by JS -->
+                    <!-- aria-live: screen readers are notified when app.js populates the list. -->
+                    <div id="country-list" class="country-list" aria-live="polite" aria-label="Country leaderboard">
+                        <!-- Populated dynamically by app.js -->
                     </div>
                 </div>
             </div>
@@ -109,33 +156,39 @@
                     <div class="panel-title">Verification Status</div>
                 </div>
                 <div class="chart-wrap" style="height:260px;">
-                    <canvas id="statusDonut"></canvas>
+                    <canvas id="statusDonut" aria-label="Donut chart showing verification status distribution"></canvas>
                 </div>
-                <div class="donut-legend" id="donut-legend"></div>
+                <div class="donut-legend" id="donut-legend" aria-live="polite">
+                    <!-- Populated dynamically by app.js -->
+                </div>
             </div>
 
         </div>
     </div><!-- /tab-dashboard -->
 
     <!-- ══════════ VERIFICATION TAB ══════════ -->
-    <div id="tab-verification" class="tab-content">
+    <div id="tab-verification" class="tab-content" role="tabpanel" aria-labelledby="nav-verification">
         <div class="tab-wrap">
 
-            <!-- KPI Strip -->
-            <div class="kpi-strip" id="vf-strip">
-                <div class="kpi-strip-card" data-vf-status="all">
+            <!-- KPI Strip: acts as a set of status filters. -->
+            <div class="kpi-strip" id="vf-strip" role="list" aria-label="Verification status filters">
+                <div class="kpi-strip-card" data-vf-status="all"
+                     role="button" tabindex="0" aria-label="Show all verification records">
                     <div class="kpi-strip-val" id="vfs-total">—</div>
                     <div class="kpi-strip-lbl">Showing</div>
                 </div>
-                <div class="kpi-strip-card" data-vf-status="Discrepancy">
+                <div class="kpi-strip-card" data-vf-status="Discrepancy"
+                     role="button" tabindex="0" aria-label="Filter by discrepancies">
                     <div class="kpi-strip-val" id="vfs-disc">—</div>
                     <div class="kpi-strip-lbl">Discrepancies</div>
                 </div>
-                <div class="kpi-strip-card" data-vf-status="Error">
+                <div class="kpi-strip-card" data-vf-status="Error"
+                     role="button" tabindex="0" aria-label="Filter by web issues">
                     <div class="kpi-strip-val" id="vfs-err">—</div>
                     <div class="kpi-strip-lbl">Web Issues</div>
                 </div>
-                <div class="kpi-strip-card" data-vf-status="Verified">
+                <div class="kpi-strip-card" data-vf-status="Verified"
+                     role="button" tabindex="0" aria-label="Filter by verified records">
                     <div class="kpi-strip-val" id="vfs-ver">—</div>
                     <div class="kpi-strip-lbl">Verified</div>
                 </div>
@@ -144,38 +197,40 @@
             <div class="panel">
                 <!-- Filter Bar -->
                 <div class="filter-bar">
-                    <input class="search-box" id="vf-search" placeholder="🔍  Search name, university, country…" type="text">
-                    <select class="filter-select" id="vf-status">
+                    <input class="search-box" id="vf-search"
+                           placeholder="🔍  Search name, university, country…" type="text"
+                           aria-label="Search verification records">
+                    <select class="filter-select" id="vf-status" aria-label="Filter verification records by status">
                         <option value="issues">Issues Only (Default)</option>
                         <option value="all">All Statuses</option>
                         <option value="Verified">Verified</option>
                         <option value="Discrepancy">Discrepancy</option>
                         <option value="Error">Error</option>
                     </select>
-                    <select class="filter-select" id="vf-country">
+                    <select class="filter-select" id="vf-country" aria-label="Filter verification records by country">
                         <option value="all">All Countries</option>
                     </select>
-                    <select class="filter-select" id="vf-domain">
+                    <select class="filter-select" id="vf-domain" aria-label="Filter verification records by domain">
                         <option value="all">All Domains</option>
                     </select>
-                    <button class="btn-reset" id="vf-reset">✕ Reset</button>
+                    <button class="btn-reset" id="vf-reset" type="button" aria-label="Reset verification filters">✕ Reset</button>
                 </div>
 
-                <!-- Table -->
+                <!-- Verification Table -->
                 <div class="tbl-wrap">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th style="width:48px;">#</th>
-                                <th>Course Name</th>
-                                <th>University</th>
-                                <th>Country</th>
-                                <th>Domain</th>
-                                <th>Status</th>
-                                <th>Issue</th>
+                                <th scope="col" style="width:48px;">#</th>
+                                <th scope="col">Course Name</th>
+                                <th scope="col">University</th>
+                                <th scope="col">Country</th>
+                                <th scope="col">Domain</th>
+                                <th scope="col">Status</th>
+                                <th scope="col">Issue</th>
                             </tr>
                         </thead>
-                        <tbody id="vf-tbody">
+                        <tbody id="vf-tbody" aria-live="polite">
                             <tr><td colspan="7" class="empty-state">Loading…</td></tr>
                         </tbody>
                     </table>
@@ -183,56 +238,58 @@
 
                 <!-- Pagination -->
                 <div class="pag-bar">
-                    <button class="btn-pg" id="vf-prev">← Prev</button>
+                    <button class="btn-pg" id="vf-prev" type="button" aria-label="Previous verification page">← Prev</button>
                     <span class="pag-info" id="vf-pag-info">—</span>
-                    <button class="btn-pg" id="vf-next">Next →</button>
+                    <button class="btn-pg" id="vf-next" type="button" aria-label="Next verification page">Next →</button>
                 </div>
             </div>
         </div>
     </div><!-- /tab-verification -->
 
     <!-- ══════════ ALL COURSES TAB ══════════ -->
-    <div id="tab-courses" class="tab-content">
+    <div id="tab-courses" class="tab-content" role="tabpanel" aria-labelledby="nav-courses">
         <div class="tab-wrap">
             <div class="panel">
                 <!-- Filter Bar -->
                 <div class="filter-bar">
-                    <input class="search-box" id="cf-search" placeholder="🔍  Search name, university, country, skills…" type="text">
-                    <select class="filter-select" id="cf-status">
+                    <input class="search-box" id="cf-search"
+                           placeholder="🔍  Search name, university, country, skills…" type="text"
+                           aria-label="Search all courses">
+                    <select class="filter-select" id="cf-status" aria-label="Filter all courses by status">
                         <option value="all">All Statuses</option>
                         <option value="Verified">Verified</option>
                         <option value="Discrepancy">Discrepancy</option>
                         <option value="Error">Error</option>
                     </select>
-                    <select class="filter-select" id="cf-country">
+                    <select class="filter-select" id="cf-country" aria-label="Filter all courses by country">
                         <option value="all">All Countries</option>
                     </select>
-                    <select class="filter-select" id="cf-domain">
+                    <select class="filter-select" id="cf-domain" aria-label="Filter all courses by domain">
                         <option value="all">All Domains</option>
                     </select>
-                    <select class="filter-select" id="cf-qs">
+                    <select class="filter-select" id="cf-qs" aria-label="Filter all courses by QS ranking">
                         <option value="any">Any QS Rank</option>
                         <option value="yes">QS Ranked ✓</option>
                         <option value="no">Not QS Ranked</option>
                     </select>
-                    <button class="btn-reset" id="cf-reset">✕ Reset</button>
+                    <button class="btn-reset" id="cf-reset" type="button" aria-label="Reset all course filters">✕ Reset</button>
                 </div>
 
-                <!-- Table -->
+                <!-- All Courses Table -->
                 <div class="tbl-wrap">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th style="width:48px;">#</th>
-                                <th>Course Name</th>
-                                <th>University</th>
-                                <th>Country</th>
-                                <th>Domain</th>
-                                <th>QS</th>
-                                <th>Status</th>
+                                <th scope="col" style="width:48px;">#</th>
+                                <th scope="col">Course Name</th>
+                                <th scope="col">University</th>
+                                <th scope="col">Country</th>
+                                <th scope="col">Domain</th>
+                                <th scope="col">QS</th>
+                                <th scope="col">Status</th>
                             </tr>
                         </thead>
-                        <tbody id="cf-tbody">
+                        <tbody id="cf-tbody" aria-live="polite">
                             <tr><td colspan="7" class="empty-state">Loading…</td></tr>
                         </tbody>
                     </table>
@@ -240,9 +297,9 @@
 
                 <!-- Pagination -->
                 <div class="pag-bar">
-                    <button class="btn-pg" id="cf-prev">← Prev</button>
+                    <button class="btn-pg" id="cf-prev" type="button" aria-label="Previous course page">← Prev</button>
                     <span class="pag-info" id="cf-pag-info">—</span>
-                    <button class="btn-pg" id="cf-next">Next →</button>
+                    <button class="btn-pg" id="cf-next" type="button" aria-label="Next course page">Next →</button>
                 </div>
             </div>
         </div>
@@ -251,7 +308,8 @@
 </div><!-- /main-page -->
 
 <!-- ═══════════════════════ COURSE MODAL ═══════════════════════ -->
-<div id="course-modal" class="modal-overlay">
+<div id="course-modal" class="modal-overlay" role="dialog" aria-modal="true"
+     aria-labelledby="modal-title" aria-describedby="modal-sub">
     <div class="modal-box">
         <div class="modal-head">
             <div>
@@ -260,12 +318,14 @@
             </div>
             <div class="modal-actions">
                 <span class="badge" id="modal-badge">Status</span>
-                <button class="modal-close-btn" id="modal-close">✕</button>
+                <button class="modal-close-btn" id="modal-close" type="button" aria-label="Close course details">✕</button>
             </div>
         </div>
 
         <!-- Course Meta -->
-        <div class="modal-meta" id="modal-meta"></div>
+        <div class="modal-meta" id="modal-meta" aria-live="polite">
+            <!-- Populated dynamically by app.js -->
+        </div>
 
         <!-- Comparison Table -->
         <div class="modal-section-title">PDF vs Website Comparison</div>
@@ -273,24 +333,30 @@
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Attribute</th>
-                        <th>PDF (Original)</th>
-                        <th>Website (Verified)</th>
-                        <th>Match</th>
-                        <th>Action</th>
+                        <th scope="col">Attribute</th>
+                        <th scope="col">PDF (Original)</th>
+                        <th scope="col">Website (Verified)</th>
+                        <th scope="col">Match</th>
+                        <th scope="col">Action</th>
                     </tr>
                 </thead>
-                <tbody id="modal-tbody"></tbody>
+                <tbody id="modal-tbody" aria-live="polite">
+                    <tr><td colspan="5" class="empty-state">Select a course to view details</td></tr>
+                </tbody>
             </table>
         </div>
 
         <div class="modal-footer">
-            <span class="modal-hint" id="modal-hint"></span>
-            <button class="btn-solve-all" id="modal-solve-all" style="display:none;">✓ Mark All Resolved</button>
+            <span class="modal-hint" id="modal-hint" aria-live="polite"></span>
+            <button class="btn-solve-all" id="modal-solve-all" type="button" style="display:none;">✓ Mark All Resolved</button>
         </div>
     </div>
 </div>
 
+<!--
+  Load runtime configuration before application logic so app.js can read settings
+  (e.g., API endpoints) immediately on initialization.
+-->
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
